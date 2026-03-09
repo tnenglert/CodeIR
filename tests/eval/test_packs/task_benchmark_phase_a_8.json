@@ -1,0 +1,110 @@
+{
+  "pack_version": "task_benchmark.v1",
+  "source_manifest": "eval/test_packs/sampling_manifest_v1.json",
+  "seed": 42,
+  "target_task_count": 8,
+  "phase": "A",
+  "phase_note": "Harness validation only. This sample size does not support product efficacy conclusions.",
+  "l2_scope_note": "L2 is excluded intentionally to avoid conflating harness bugs with unresolved IR-design questions.",
+  "defaults": {
+    "top_k": 5,
+    "max_expansions": 1
+  },
+  "strata_required": [
+    "async_entities",
+    "empty_exception_classes",
+    "wrapper_style_methods",
+    "inheritance_heavy_classes",
+    "high_call_entities"
+  ],
+  "tasks": [
+    {
+      "task_id": "STR001",
+      "query": "authenticate users through async dependency and manager flows",
+      "ground_truth_entity_ids": [
+        "CRRNTSRDPNDNCY"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "async_entities"
+    },
+    {
+      "task_id": "STR002",
+      "query": "handle user-not-found and token-invalid error conditions",
+      "ground_truth_entity_ids": [
+        "INVLDRSTPSSWRDTKN"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "empty_exception_classes"
+    },
+    {
+      "task_id": "STR003",
+      "query": "find facade methods that return router objects",
+      "ground_truth_entity_ids": [
+        "GTRGSTRRTR"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "wrapper_style_methods"
+    },
+    {
+      "task_id": "STR004",
+      "query": "identify authentication strategy classes implementing token lifecycle",
+      "ground_truth_entity_ids": [
+        "RDSSTRTGY"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "inheritance_heavy_classes"
+    },
+    {
+      "task_id": "STR005",
+      "query": "find orchestration-heavy entities coordinating auth and persistence",
+      "ground_truth_entity_ids": [
+        "ATHNTCTR"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "high_call_entities"
+    },
+    {
+      "task_id": "SUP001",
+      "query": "cookie transport logout response that clears authentication cookie",
+      "ground_truth_entity_ids": [
+        "GTLGTRSPNS.03",
+        "STLGTCK"
+      ],
+      "difficulty": "medium",
+      "domain": "http",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP002",
+      "query": "cookie transport login response that sets authentication cookie",
+      "ground_truth_entity_ids": [
+        "GTLGNRSPNS.03",
+        "STLGNCK"
+      ],
+      "difficulty": "medium",
+      "domain": "http",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP003",
+      "query": "decode and validate a JWT payload from an incoming token",
+      "ground_truth_entity_ids": [
+        "DCDJWT",
+        "GTSCRTVL"
+      ],
+      "difficulty": "easy",
+      "domain": "auth",
+      "requires_write_safety": false
+    }
+  ]
+}

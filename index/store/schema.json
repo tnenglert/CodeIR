@@ -1,0 +1,19 @@
+{
+  "entities_db": [
+    "CREATE TABLE IF NOT EXISTS modules (file_path TEXT PRIMARY KEY, category TEXT NOT NULL, content_hash TEXT NOT NULL, entity_count INTEGER NOT NULL DEFAULT 0, deps_internal TEXT NOT NULL DEFAULT '', indexed_at TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS file_metadata (file_path TEXT PRIMARY KEY, content_hash TEXT NOT NULL, last_indexed_at TEXT NOT NULL, byte_size INTEGER NOT NULL DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, qualified_name TEXT NOT NULL, file_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, module_id TEXT, complexity_class TEXT)",
+    "CREATE TABLE IF NOT EXISTS ir_rows (entity_id TEXT NOT NULL, mode TEXT NOT NULL, ir_text TEXT NOT NULL, ir_json TEXT NOT NULL, source_char_count INTEGER NOT NULL DEFAULT 0, ir_char_count INTEGER NOT NULL DEFAULT 0, source_token_count INTEGER NOT NULL DEFAULT 0, ir_token_count INTEGER NOT NULL DEFAULT 0, compression_ratio REAL NOT NULL DEFAULT 1.0, PRIMARY KEY(entity_id, mode), FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE)",
+    "CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS idx_entities_file ON entities(file_path)",
+    "CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)",
+    "CREATE INDEX IF NOT EXISTS idx_entities_qualified_name ON entities(qualified_name)",
+    "CREATE INDEX IF NOT EXISTS idx_modules_category ON modules(category)",
+    "CREATE INDEX IF NOT EXISTS idx_ir_rows_mode ON ir_rows(mode)"
+  ],
+  "mapping_db": [
+    "CREATE TABLE IF NOT EXISTS abbreviations (map_type TEXT NOT NULL, original TEXT NOT NULL, token TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(map_type, original))",
+    "CREATE INDEX IF NOT EXISTS idx_abbrev_token ON abbreviations(token)",
+    "CREATE TABLE IF NOT EXISTS abbrev_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+  ]
+}

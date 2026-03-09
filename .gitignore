@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+__pycache__/
+*.pyc
+.semanticir/
+.env
+/_fastapi-users-master/
+/tests/_artifacts/
+/.claude/
+~$*
+*.docx
+tests/eval/results/
+tests/testRepositories/

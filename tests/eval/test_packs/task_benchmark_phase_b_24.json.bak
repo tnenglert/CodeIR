@@ -1,0 +1,309 @@
+{
+  "pack_version": "task_benchmark.v1",
+  "source_manifest": "eval/test_packs/sampling_manifest_v1.json",
+  "seed": 42,
+  "target_task_count": 24,
+  "phase": "B",
+  "phase_note": "Preliminary efficacy signal only.",
+  "l2_scope_note": "L2 is excluded intentionally to avoid conflating harness bugs with unresolved IR-design questions.",
+  "defaults": {
+    "top_k": 5,
+    "max_expansions": 1
+  },
+  "strata_required": [
+    "async_entities",
+    "empty_exception_classes",
+    "wrapper_style_methods",
+    "inheritance_heavy_classes",
+    "high_call_entities"
+  ],
+  "tasks": [
+    {
+      "task_id": "STR001",
+      "query": "authenticate users through async dependency and manager flows",
+      "ground_truth_entity_ids": [
+        "AMT_CRRNTSRDPNDNCY"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "async_entities"
+    },
+    {
+      "task_id": "STR002",
+      "query": "handle user-not-found and token-invalid error conditions",
+      "ground_truth_entity_ids": [
+        "CLS_INVLDRSTPSSWRDTKN"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "empty_exception_classes"
+    },
+    {
+      "task_id": "STR003",
+      "query": "find facade methods that return router objects",
+      "ground_truth_entity_ids": [
+        "MT_GTRGSTRRTR"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "wrapper_style_methods"
+    },
+    {
+      "task_id": "STR004",
+      "query": "identify authentication strategy classes implementing token lifecycle",
+      "ground_truth_entity_ids": [
+        "CLS_RDSSTRTGY"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "inheritance_heavy_classes"
+    },
+    {
+      "task_id": "STR005",
+      "query": "find orchestration-heavy entities coordinating auth and persistence",
+      "ground_truth_entity_ids": [
+        "CLS_ATHNTCTR"
+      ],
+      "difficulty": "edge",
+      "domain": "mixed",
+      "requires_write_safety": false,
+      "stratum": "high_call_entities"
+    },
+    {
+      "task_id": "SUP001",
+      "query": "cookie transport logout response that clears authentication cookie",
+      "ground_truth_entity_ids": [
+        "AMT_GTLGTRSPNS_03",
+        "MT_STLGTCK"
+      ],
+      "difficulty": "medium",
+      "domain": "http",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP002",
+      "query": "cookie transport login response that sets authentication cookie",
+      "ground_truth_entity_ids": [
+        "AMT_GTLGNRSPNS_03",
+        "MT_STLGNCK"
+      ],
+      "difficulty": "medium",
+      "domain": "http",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP003",
+      "query": "decode and validate a JWT payload from an incoming token",
+      "ground_truth_entity_ids": [
+        "FN_DCDJWT",
+        "FN_GTSCRTVL"
+      ],
+      "difficulty": "easy",
+      "domain": "auth",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP004",
+      "query": "component that signals transport logout is unsupported instead of deleting persisted tokens",
+      "ground_truth_entity_ids": [
+        "AMT_GTLGTRSPNS_02",
+        "CLS_TRNSPRTLGTNTSPPRTDRRR"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "trick": true,
+      "note": "Distinguishes transport-level logout semantics from strategy-level token revocation."
+    },
+    {
+      "task_id": "SUP005",
+      "query": "forgot-password endpoint that initiates reset token generation",
+      "ground_truth_entity_ids": [
+        "AMT_FRGTPSSWRD_02",
+        "AMT_FRGTPSSWRD"
+      ],
+      "difficulty": "medium",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP006",
+      "query": "oauth associate callback path that links provider account to current user",
+      "ground_truth_entity_ids": [
+        "AMT_CLLBCK_02",
+        "AMT_OTHSSCTCLLBCK",
+        "AMT_ADDTHCCNT"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP007",
+      "query": "users router endpoints for self-profile retrieval and update",
+      "ground_truth_entity_ids": [
+        "AMT_ME",
+        "AMT_UPDTM"
+      ],
+      "difficulty": "medium",
+      "domain": "router",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP008",
+      "query": "oauth callback path that creates user records when account/email are new",
+      "ground_truth_entity_ids": [
+        "AMT_CLLBCK",
+        "AMT_OTHCLLBCK",
+        "AMT_CRT_03"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP009",
+      "query": "authenticate a user and opportunistically upgrade password hash",
+      "ground_truth_entity_ids": [
+        "AMT_ATHNTCT_02",
+        "MT_VRFYNDPDT_02"
+      ],
+      "difficulty": "medium",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP010",
+      "query": "reset-password endpoint that applies a new password from token claims",
+      "ground_truth_entity_ids": [
+        "AMT_RSTPSSWRD_02",
+        "AMT_RSTPSSWRD"
+      ],
+      "difficulty": "medium",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP011",
+      "query": "strategies that actually revoke persisted tokens rather than raising not-supported",
+      "ground_truth_entity_ids": [
+        "AMT_DSTRYTKN_02",
+        "AMT_DSTRYTKN_04"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true,
+      "trick": true,
+      "note": "JWT destroy_token is an obvious but wrong answer; this task should pressure L0 expansion."
+    },
+    {
+      "task_id": "SUP012",
+      "query": "issue a signed JWT token for verify and reset flows",
+      "ground_truth_entity_ids": [
+        "FN_GNRTJWT",
+        "FN_GTSCRTVL"
+      ],
+      "difficulty": "easy",
+      "domain": "auth",
+      "requires_write_safety": false
+    },
+    {
+      "task_id": "SUP013",
+      "query": "backend logout flow that revokes token and returns logout transport response",
+      "ground_truth_entity_ids": [
+        "AMT_LGT",
+        "AMT_DSTRYTKN_02",
+        "AMT_GTLGTRSPNS_03"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP014",
+      "query": "parse integer user ids with proper invalid-id handling",
+      "ground_truth_entity_ids": [
+        "MT_PRSD_03",
+        "CLS_INVLDD"
+      ],
+      "difficulty": "easy",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP015",
+      "query": "parse UUID user ids with proper invalid-id handling",
+      "ground_truth_entity_ids": [
+        "MT_PRSD_02",
+        "CLS_INVLDD"
+      ],
+      "difficulty": "easy",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP016",
+      "query": "route for requesting an email verification token",
+      "ground_truth_entity_ids": [
+        "AMT_RQSTVRFYTKN",
+        "AMT_RQSTVRFY"
+      ],
+      "difficulty": "medium",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP017",
+      "query": "verify-email path that marks a user verified after token checks",
+      "ground_truth_entity_ids": [
+        "AMT_VRFY_02",
+        "AMT_VRFY"
+      ],
+      "difficulty": "medium",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    },
+    {
+      "task_id": "SUP018",
+      "query": "FastAPIUsers facade method delegating users router construction",
+      "ground_truth_entity_ids": [
+        "MT_GTSRSRTR",
+        "FN_GTSRSRTR"
+      ],
+      "difficulty": "medium",
+      "domain": "router",
+      "requires_write_safety": false,
+      "cross_module": true,
+      "trick": true,
+      "note": "Facade and factory have similar names; naive single-hop matching tends to miss one side."
+    },
+    {
+      "task_id": "SUP019",
+      "query": "backend login flow that writes strategy token and returns transport response",
+      "ground_truth_entity_ids": [
+        "AMT_LGN",
+        "AMT_WRTTKN_03",
+        "AMT_GTLGNRSPNS_02"
+      ],
+      "difficulty": "hard",
+      "domain": "auth",
+      "requires_write_safety": false,
+      "cross_module": true
+    }
+  ]
+}

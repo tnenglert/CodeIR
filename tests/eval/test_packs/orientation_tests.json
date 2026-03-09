@@ -1,0 +1,846 @@
+{
+  "name": "orientation_floor_tests",
+  "total_tests": 60,
+  "tests": [
+    {
+      "test_id": "OR-001",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "SEND.03",
+      "entity_name": "Session.send",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT SEND.03 #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-002",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "SEND.03",
+      "entity_name": "Session.send",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT SEND.03 #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-003",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RQST",
+      "entity_name": "Session.request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT RQST #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-004",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RQST",
+      "entity_name": "Session.request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT RQST #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-005",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPRRQST",
+      "entity_name": "Session.prepare_request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRRQST #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-006",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPRRQST",
+      "entity_name": "Session.prepare_request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRRQST #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-007",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "MRGNVRNMNTSTTNGS",
+      "entity_name": "Session.merge_environment_settings",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT MRGNVRNMNTSTTNGS #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-008",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "MRGNVRNMNTSTTNGS",
+      "entity_name": "Session.merge_environment_settings",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT MRGNVRNMNTSTTNGS #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "session management",
+        "expected_letter": "C",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-009",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "SSSN",
+      "entity_name": "Session",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS SSSN #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-010",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "SSSN",
+      "entity_name": "Session",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS SSSN #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "session management",
+        "expected_letter": "C",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-011",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "GET.02",
+      "entity_name": "Session.get",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT GET.02 #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-012",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "GET.02",
+      "entity_name": "Session.get",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT GET.02 #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-013",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RQST",
+      "entity_name": "request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN RQST #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-014",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RQST",
+      "entity_name": "request",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN RQST #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-015",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RSPNS",
+      "entity_name": "Response",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RSPNS #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-016",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RSPNS",
+      "entity_name": "Response",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RSPNS #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "response handling",
+        "expected_letter": "B",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-017",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "CNTNT",
+      "entity_name": "Response.content",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT CNTNT #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-018",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "CNTNT",
+      "entity_name": "Response.content",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT CNTNT #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "response handling",
+        "expected_letter": "B",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-019",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "JSON",
+      "entity_name": "Response.json",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT JSON #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-020",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "JSON",
+      "entity_name": "Response.json",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT JSON #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "response handling",
+        "expected_letter": "B",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-021",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RSFRSTTS",
+      "entity_name": "Response.raise_for_status",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT RSFRSTTS #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-022",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RSFRSTTS",
+      "entity_name": "Response.raise_for_status",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT RSFRSTTS #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "response handling",
+        "expected_letter": "B",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-023",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPRDRQST",
+      "entity_name": "PreparedRequest",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS PRPRDRQST #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-024",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPRDRQST",
+      "entity_name": "PreparedRequest",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS PRPRDRQST #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-025",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPR.02",
+      "entity_name": "PreparedRequest.prepare",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPR.02 #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-026",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPR.02",
+      "entity_name": "PreparedRequest.prepare",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPR.02 #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-027",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPRBDY",
+      "entity_name": "PreparedRequest.prepare_body",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRBDY #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-028",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPRBDY",
+      "entity_name": "PreparedRequest.prepare_body",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRBDY #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-029",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPRRL",
+      "entity_name": "PreparedRequest.prepare_url",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRRL #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-030",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPRRL",
+      "entity_name": "PreparedRequest.prepare_url",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT PRPRRL #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-031",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "SEND.02",
+      "entity_name": "HTTPAdapter.send",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT SEND.02 #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-032",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "SEND.02",
+      "entity_name": "HTTPAdapter.send",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT SEND.02 #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "connection management",
+        "expected_letter": "D",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-033",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "GTCNNCTN",
+      "entity_name": "HTTPAdapter.get_connection",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT GTCNNCTN #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-034",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "GTCNNCTN",
+      "entity_name": "HTTPAdapter.get_connection",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT GTCNNCTN #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "connection management",
+        "expected_letter": "D",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-035",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "HTTPDGSTTH",
+      "entity_name": "HTTPDigestAuth",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPDGSTTH #AUTH #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "authentication",
+        "expected_letter": "B",
+        "token_domain": "AUTH"
+      }
+    },
+    {
+      "test_id": "OR-036",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "HTTPDGSTTH",
+      "entity_name": "HTTPDigestAuth",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPDGSTTH #AUTH #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-037",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "BLDDGSTHDR",
+      "entity_name": "HTTPDigestAuth.build_digest_header",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT BLDDGSTHDR #AUTH #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "authentication",
+        "expected_letter": "B",
+        "token_domain": "AUTH"
+      }
+    },
+    {
+      "test_id": "OR-038",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "BLDDGSTHDR",
+      "entity_name": "HTTPDigestAuth.build_digest_header",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT BLDDGSTHDR #AUTH #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-039",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "HNDL401",
+      "entity_name": "HTTPDigestAuth.handle_401",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT HNDL401 #AUTH #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "authentication",
+        "expected_letter": "B",
+        "token_domain": "AUTH"
+      }
+    },
+    {
+      "test_id": "OR-040",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "HNDL401",
+      "entity_name": "HTTPDigestAuth.handle_401",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nMT HNDL401 #AUTH #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-041",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "HTTPBSCTH",
+      "entity_name": "HTTPBasicAuth",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPBSCTH #AUTH #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "authentication",
+        "expected_letter": "B",
+        "token_domain": "AUTH"
+      }
+    },
+    {
+      "test_id": "OR-042",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "HTTPBSCTH",
+      "entity_name": "HTTPBasicAuth",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPBSCTH #AUTH #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-043",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RQSTSCKJR",
+      "entity_name": "RequestsCookieJar",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RQSTSCKJR #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-044",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RQSTSCKJR",
+      "entity_name": "RequestsCookieJar",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RQSTSCKJR #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "request handling",
+        "expected_letter": "A",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-045",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "CKJRFRMDCT",
+      "entity_name": "cookiejar_from_dict",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN CKJRFRMDCT #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-046",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "CKJRFRMDCT",
+      "entity_name": "cookiejar_from_dict",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN CKJRFRMDCT #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "session management",
+        "expected_letter": "C",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-047",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "GTNCDNGFRMHDRS",
+      "entity_name": "get_encoding_from_headers",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN GTNCDNGFRMHDRS #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-048",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "GTNCDNGFRMHDRS",
+      "entity_name": "get_encoding_from_headers",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN GTNCDNGFRMHDRS #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-049",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "GTNCDNGSFRMCNTNT",
+      "entity_name": "get_encodings_from_content",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN GTNCDNGSFRMCNTNT #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-050",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "GTNCDNGSFRMCNTNT",
+      "entity_name": "get_encodings_from_content",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN GTNCDNGSFRMCNTNT #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    },
+    {
+      "test_id": "OR-051",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "RQSTXCPTN",
+      "entity_name": "RequestException",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RQSTXCPTN #HTTP #EXCE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-052",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "RQSTXCPTN",
+      "entity_name": "RequestException",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS RQSTXCPTN #HTTP #EXCE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "EXCE"
+      }
+    },
+    {
+      "test_id": "OR-053",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "CNNCTNRRR",
+      "entity_name": "ConnectionError",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS CNNCTNRRR #HTTP #EXCE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-054",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "CNNCTNRRR",
+      "entity_name": "ConnectionError",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS CNNCTNRRR #HTTP #EXCE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "EXCE"
+      }
+    },
+    {
+      "test_id": "OR-055",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "HTTPRRR",
+      "entity_name": "HTTPError",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPRRR #HTTP #EXCE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-056",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "HTTPRRR",
+      "entity_name": "HTTPError",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS HTTPRRR #HTTP #EXCE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "EXCE"
+      }
+    },
+    {
+      "test_id": "OR-057",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "TMT",
+      "entity_name": "Timeout",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS TMT #HTTP #EXCE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-058",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "TMT",
+      "entity_name": "Timeout",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nCLS TMT #HTTP #EXCE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "EXCE"
+      }
+    },
+    {
+      "test_id": "OR-059",
+      "capability": "orientation",
+      "sub_type": "domain",
+      "level": "L3",
+      "entity_id": "PRPNDSCHMFNDD",
+      "entity_name": "prepend_scheme_if_needed",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN PRPNDSCHMFNDD #HTTP #CORE\n```\n\nBased on the domain tag (e.g., #HTTP, #AUTH) in this token, which domain does this entity belong to?\n\nOptions:\nA) HTTP/networking\nB) Authentication  \nC) Data encoding\nD) Error handling\nE) Cryptography\nF) File I/O\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_domain": "HTTP/networking",
+        "expected_letter": "A",
+        "token_domain": "HTTP"
+      }
+    },
+    {
+      "test_id": "OR-060",
+      "capability": "orientation",
+      "sub_type": "component",
+      "level": "L3",
+      "entity_id": "PRPNDSCHMFNDD",
+      "entity_name": "prepend_scheme_if_needed",
+      "prompt": "You are given a SemanticIR L3 token:\n\n```\nFN PRPNDSCHMFNDD #HTTP #CORE\n```\n\nBased on the entity ID and type prefix, what component/role does this entity likely serve?\n\nOptions:\nA) Request handling\nB) Response handling\nC) Session management\nD) Connection management\nE) Utility/helper\n\nAnswer with just the letter.",
+      "answer_key": {
+        "expected_component": "utility/helper",
+        "expected_letter": "E",
+        "token_category": "CORE"
+      }
+    }
+  ]
+}
