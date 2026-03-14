@@ -1,4 +1,4 @@
-SemanticIR L3 token format:
+CodeIR L3 token format:
 TYPE ENTITY_ID [#DOMAIN] #CATEGORY
 
 Entity IDs:

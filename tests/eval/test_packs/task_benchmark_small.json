@@ -1,7 +1,7 @@
 {
   "pack_version": "task_benchmark.v1",
   "phase": "A",
-  "phase_note": "Harness validation only. This sample size is not evidence that SemanticIR works in production.",
+  "phase_note": "Harness validation only. This sample size is not evidence that CodeIR works in production.",
   "l2_scope_note": "L2 is excluded intentionally to avoid conflating harness bugs with unresolved IR-design questions.",
   "defaults": {
     "top_k": 5,

@@ -1,4 +1,4 @@
-# SemanticIR Compression A/B Test Manual
+# CodeIR Compression A/B Test Manual
 
 > [!WARNING]
 > This manual is legacy and contains workflows that may reference deprecated commands.
@@ -73,7 +73,7 @@ python3 cli.py \
 ```
 
 Expected output includes:
-- `SemanticIR indexing complete`
+- `CodeIR indexing complete`
 - `compression_mode: <a|b|hybrid>`
 
 ## 5. Inspect a Compressed Entity

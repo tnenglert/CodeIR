@@ -1,4 +1,4 @@
-# SemanticIR Spec v0.2 (As Built)
+# CodeIR Spec v0.2 (As Built)
 
 This document is the implementation contract for current code. It is intentionally descriptive, not aspirational.
 
@@ -6,8 +6,7 @@ This document is the implementation contract for current code. It is intentional
 
 - Language: Python
 - Entity kinds: function, async function, method, async method, class
-- IR levels actively emitted: `L0`, `L1`, `L2`, `L3`
-- Validation focus for this phase: `L0`, `L1`, `L3`
+- IR levels actively emitted: `Source`, `Behavior`, `Index`
 
 ## Entity Prefixes
 
@@ -17,7 +16,7 @@ This document is the implementation contract for current code. It is intentional
 - `AMT` async method
 - `CLS` class
 
-## L0
+## Source
 
 Format:
 
@@ -26,23 +25,24 @@ Format:
 <raw source>
 ```
 
-Purpose: exact verification surface.
+Purpose: exact verification surface. Use only when you need to edit or verify implementation.
 
-## L1
+## Behavior
 
 Format:
 
 ```text
-TYPE ENTITY_ID N=<name_token> [C=<calls>] [F=<flags>] [A=<assign_count>] [B=<bases>] [#DOMAIN] [#CATE]
+TYPE ENTITY_ID [C=<calls>] [F=<flags>] [A=<assign_count>] [B=<bases>] [#DOMAIN] [#CATE]
 ```
 
 Field semantics (fields are omitted when empty/zero):
 
-- `N`: compressed name token (always present)
 - `C`: semantic references (calls, plus class inheritance refs) — omitted if no calls
 - `F`: sorted behavioral flags — omitted if no flags
 - `A`: assignment operation count — omitted if zero
 - `B`: base classes — omitted if no bases
+
+Note: `N=` (name token) was removed in v0.2 — redundant with entity ID which already carries semantic abbreviation.
 
 Flags:
 
@@ -55,7 +55,7 @@ Flags:
 - `W` with/async-with encountered
 - `X` exception-like class
 
-## L3
+## Index
 
 Format:
 
@@ -76,16 +76,12 @@ Categories currently emitted:
 
 - `#CORE`, `#ROUT`, `#SCHE`, `#CONF`, `#COMP`, `#EXCE`, `#CONS`, `#TEST`, `#INIT`, `#DOCS`, `#UTIL`
 
-## L2 Note
-
-`L2` exists in code but is excluded from the current validation program. Including it now would mix harness issues with unresolved IR-design questions.
-
 ## Canonical Preambles
 
 Use these files for all eval runners:
 
-- `eval/preambles/l1_preamble.md`
-- `eval/preambles/l3_preamble.md`
+- `tests/eval/preambles/l1_preamble.md`
+- `tests/eval/preambles/l3_preamble.md`
 
 ## Source of Truth
 

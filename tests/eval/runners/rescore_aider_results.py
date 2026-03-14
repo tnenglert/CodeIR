@@ -63,7 +63,7 @@ def rescore_results(results_path: Path, output_suffix: str = "_rescored") -> Non
                 )
                 condition_logs.extend([{"task_id": task_id, **log} for log in mapping_log])
             else:
-                # SemanticIR conditions - IDs are already entity IDs
+                # CodeIR conditions - IDs are already entity IDs
                 ranked_ids = [str(x).strip() for x in raw_ids if str(x).strip()]
                 mapping_failures = []
 

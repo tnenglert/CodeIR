@@ -7,14 +7,16 @@ import random
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from index.indexer import index_repo, map_legacy_mode_to_level
+from tests.eval.ranking import rank_by_query
 from index.store.db import connect
+from index.store.fetch import load_entity_ir_rows
 
 
 def _load_entities(repo_path: Path) -> List[Dict[str, Any]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         raise FileNotFoundError(f"entities DB not found: {db_path}")
     conn = connect(db_path)
@@ -39,62 +41,6 @@ def _load_entities(repo_path: Path) -> List[Dict[str, Any]]:
         }
         for r in rows
     ]
-
-
-def _load_ir_rows(repo_path: Path, level: Optional[str] = None) -> List[Dict[str, Any]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
-    conn = connect(db_path)
-    conn.row_factory = sqlite3.Row
-    if level:
-        rows = conn.execute(
-            """
-            SELECT e.id AS entity_id, e.qualified_name, e.kind, r.ir_text
-            FROM entities e
-            JOIN ir_rows r ON r.entity_id = e.id
-            WHERE r.mode = ?
-            """,
-            (level,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT e.id AS entity_id, e.qualified_name, e.kind, r.ir_text
-            FROM entities e
-            JOIN ir_rows r ON r.entity_id = e.id
-            """
-        ).fetchall()
-    conn.close()
-    return [
-        {
-            "entity_id": str(r["entity_id"]),
-            "qualified_name": str(r["qualified_name"]),
-            "kind": str(r["kind"]),
-            "ir_text": str(r["ir_text"]),
-        }
-        for r in rows
-    ]
-
-
-def _score_query(row: Dict[str, Any], terms: List[str]) -> int:
-    qn = row["qualified_name"].lower()
-    ir = row["ir_text"].lower()
-    kind = row["kind"].lower()
-    score = 0
-    for t in terms:
-        if t in qn:
-            score += 4
-        if t in ir:
-            score += 3
-        if t in kind:
-            score += 1
-    return score
-
-
-def _rank_candidates(rows: List[Dict[str, Any]], query: str, top_k: int) -> List[Dict[str, Any]]:
-    terms = [t for t in query.lower().replace("_", " ").split() if len(t) >= 2]
-    scored = [(_score_query(r, terms), r) for r in rows]
-    scored.sort(key=lambda x: (-x[0], x[1]["entity_id"]))
-    return [r for _, r in scored[: max(1, top_k)]]
 
 
 def _inject_bug(repo_path: Path, entity: Dict[str, Any]) -> Tuple[str, str]:
@@ -209,7 +155,7 @@ def generate_bug_benchmark_pack(
         case_parent = case_repo.parent
         if case_parent.exists():
             shutil.rmtree(case_parent)
-        shutil.copytree(source_repo_path, case_repo, ignore=shutil.ignore_patterns(".semanticir", "__pycache__", ".git"))
+        shutil.copytree(source_repo_path, case_repo, ignore=shutil.ignore_patterns(".codeir", "__pycache__", ".git"))
 
         bug_kind, query = _inject_bug(case_repo, target)
 
@@ -231,8 +177,8 @@ def generate_bug_benchmark_pack(
             cfg["compression_mode"] = mode
             cfg["compression_level"] = level
             index_repo(repo_path=case_repo, config=cfg)
-            rows = _load_ir_rows(case_repo, level=level)
-            candidates = _rank_candidates(rows, query, top_k=top_k)
+            rows = load_entity_ir_rows(case_repo, level=level)
+            candidates = rank_by_query(rows, query, top_k=top_k)
             prompt = _build_prompt(mode=mode, case_id=case_id, query=query, candidates=candidates)
             payload = {
                 "case_id": case_id,

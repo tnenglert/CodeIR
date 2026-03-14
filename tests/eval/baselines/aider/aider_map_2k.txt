@@ -1,0 +1,332 @@
+
+docs/src/db_sqlalchemy.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+docs/src/db_sqlalchemy_access_tokens.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+docs/src/db_sqlalchemy_oauth.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+examples/beanie-oauth/app/users.py:
+⋮
+│fastapi_users = FastAPIUsers[User, PydanticObjectId](get_user_manager, [auth_backend])
+│
+⋮
+
+examples/beanie/app/db.py:
+⋮
+│async def get_user_db():
+⋮
+
+examples/sqlalchemy-oauth/app/db.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+examples/sqlalchemy/app/db.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+fastapi_users/authentication/authenticator.py:
+⋮
+│def name_to_variable_name(name: str) -> str:
+⋮
+│def name_to_strategy_variable_name(name: str) -> str:
+⋮
+│class DuplicateBackendNamesError(Exception):
+⋮
+│class Authenticator(Generic[models.UP, models.ID]):
+│    """
+│    Provides dependency callables to retrieve authenticated user.
+│
+│    It performs the authentication against a list of backends
+│    defined by the end-developer. The first backend yielding a user wins.
+│    If no backend yields a user, an HTTPException is raised.
+│
+│    :param backends: List of authentication backends.
+│    :param get_user_manager: User manager dependency callable.
+⋮
+│    def current_user(
+│        self,
+│        optional: bool = False,
+│        active: bool = False,
+│        verified: bool = False,
+│        superuser: bool = False,
+│        get_enabled_backends: Optional[
+│            EnabledBackendsDependency[models.UP, models.ID]
+│        ] = None,
+⋮
+
+fastapi_users/authentication/backend.py:
+⋮
+│class AuthenticationBackend(Generic[models.UP, models.ID]):
+⋮
+
+fastapi_users/authentication/strategy/jwt.py:
+⋮
+│class JWTStrategy(Strategy[models.UP, models.ID], Generic[models.UP, models.ID]):
+⋮
+
+fastapi_users/authentication/transport/base.py:
+⋮
+│class TransportLogoutNotSupportedError(Exception):
+⋮
+
+fastapi_users/authentication/transport/bearer.py:
+⋮
+│class BearerResponse(BaseModel):
+⋮
+│class BearerTransport(Transport):
+⋮
+
+fastapi_users/authentication/transport/cookie.py:
+⋮
+│class CookieTransport(Transport):
+│    scheme: APIKeyCookie
+│
+⋮
+│    def _set_login_cookie(self, response: Response, token: str) -> Response:
+⋮
+│    def _set_logout_cookie(self, response: Response) -> Response:
+⋮
+
+fastapi_users/db/base.py:
+⋮
+│class BaseUserDatabase(Generic[UP, ID]):
+⋮
+│UserDatabaseDependency = DependencyCallable[BaseUserDatabase[UP, ID]]
+
+fastapi_users/exceptions.py:
+⋮
+│class FastAPIUsersException(Exception):
+⋮
+│class InvalidID(FastAPIUsersException):
+⋮
+│class UserAlreadyExists(FastAPIUsersException):
+⋮
+│class UserNotExists(FastAPIUsersException):
+⋮
+│class UserInactive(FastAPIUsersException):
+⋮
+│class UserAlreadyVerified(FastAPIUsersException):
+⋮
+│class InvalidVerifyToken(FastAPIUsersException):
+⋮
+│class InvalidResetPasswordToken(FastAPIUsersException):
+⋮
+│class InvalidPasswordException(FastAPIUsersException):
+⋮
+
+fastapi_users/jwt.py:
+⋮
+│SecretType = Union[str, SecretStr]
+│JWT_ALGORITHM = "HS256"
+│
+⋮
+│def _get_secret_value(secret: SecretType) -> str:
+⋮
+│def generate_jwt(
+│    data: dict,
+│    secret: SecretType,
+│    lifetime_seconds: Optional[int] = None,
+│    algorithm: str = JWT_ALGORITHM,
+⋮
+│def decode_jwt(
+│    encoded_jwt: str,
+│    secret: SecretType,
+│    audience: list[str],
+│    algorithms: list[str] = [JWT_ALGORITHM],
+⋮
+
+fastapi_users/manager.py:
+⋮
+│class BaseUserManager(Generic[models.UP, models.ID]):
+│    """
+│    User management logic.
+│
+│    :attribute reset_password_token_secret: Secret to encode reset password token.
+│    :attribute reset_password_token_lifetime_seconds: Lifetime of reset password token.
+│    :attribute reset_password_token_audience: JWT audience of reset password token.
+│    :attribute verification_token_secret: Secret to encode verification token.
+│    :attribute verification_token_lifetime_seconds: Lifetime of verification token.
+│    :attribute verification_token_audience: JWT audience of verification token.
+│
+⋮
+│    def parse_id(self, value: Any) -> models.ID:
+⋮
+│class UUIDIDMixin:
+│    def parse_id(self, value: Any) -> uuid.UUID:
+│        if isinstance(value, uuid.UUID):
+│            return value
+│        try:
+│            return uuid.UUID(value)
+│        except ValueError as e:
+⋮
+│class IntegerIDMixin:
+│    def parse_id(self, value: Any) -> int:
+│        if isinstance(value, float):
+│            raise exceptions.InvalidID()
+│        try:
+│            return int(value)
+│        except ValueError as e:
+⋮
+
+fastapi_users/openapi.py:
+⋮
+│OpenAPIResponseType = dict[Union[int, str], dict[str, Any]]
+
+fastapi_users/password.py:
+⋮
+│class PasswordHelperProtocol(Protocol):
+│    def verify_and_update(
+│        self, plain_password: str, hashed_password: str
+⋮
+│    def hash(self, password: str) -> str: ...  # pragma: no cover
+│
+⋮
+│class PasswordHelper(PasswordHelperProtocol):
+│    def __init__(self, password_hash: Optional[PasswordHash] = None) -> None:
+│        if password_hash is None:
+│            self.password_hash = PasswordHash(
+│                (
+│                    Argon2Hasher(),
+│                    BcryptHasher(),
+│                )
+│            )
+│        else:
+⋮
+│    def verify_and_update(
+│        self, plain_password: str, hashed_password: str
+⋮
+│    def hash(self, password: str) -> str:
+⋮
+
+fastapi_users/router/common.py:
+⋮
+│class ErrorModel(BaseModel):
+⋮
+│class ErrorCodeReasonModel(BaseModel):
+⋮
+│class ErrorCode(str, Enum):
+⋮
+
+fastapi_users/schemas.py:
+⋮
+│if PYDANTIC_V2:  # pragma: no cover
+│
+│    def model_dump(model: BaseModel, *args, **kwargs) -> dict[str, Any]:
+⋮
+│    def model_validate(schema: type[SCHEMA], obj: Any, *args, **kwargs) -> SCHEMA:
+⋮
+│else:  # pragma: no cover  # type: ignore
+│
+│    def model_dump(model: BaseModel, *args, **kwargs) -> dict[str, Any]:
+⋮
+│    def model_validate(schema: type[SCHEMA], obj: Any, *args, **kwargs) -> SCHEMA:
+⋮
+
+fastapi_users/types.py:
+⋮
+│RETURN_TYPE = TypeVar("RETURN_TYPE")
+│
+│DependencyCallable = Callable[
+│    ...,
+│    Union[
+│        RETURN_TYPE,
+│        Coroutine[None, None, RETURN_TYPE],
+│        AsyncGenerator[RETURN_TYPE, None],
+│        Generator[RETURN_TYPE, None, None],
+│        AsyncIterator[RETURN_TYPE],
+│    ],
+⋮
+
+tests/conftest.py:
+⋮
+│@dataclasses.dataclass
+│class UserModel(models.UserProtocol[IDType]):
+⋮
+│@dataclasses.dataclass
+│class OAuthAccountModel(models.OAuthAccountProtocol[IDType]):
+⋮
+│@dataclasses.dataclass
+│class UserOAuthModel(UserModel):
+⋮
+│@pytest.fixture
+│def mock_user_db(
+│    user: UserModel,
+│    verified_user: UserModel,
+│    inactive_user: UserModel,
+│    superuser: UserModel,
+│    verified_superuser: UserModel,
+│) -> BaseUserDatabase[UserModel, IDType]:
+│    class MockUserDatabase(BaseUserDatabase[UserModel, IDType]):
+│        async def get(self, id: UUID4) -> Optional[UserModel]:
+│            if id == user.id:
+│                return user
+│            if id == verified_user.id:
+│                return verified_user
+│            if id == inactive_user.id:
+│                return inactive_user
+│            if id == superuser.id:
+│                return superuser
+⋮
+│@pytest.fixture
+│def mock_user_db_oauth(
+│    user_oauth: UserOAuthModel,
+│    verified_user_oauth: UserOAuthModel,
+│    inactive_user_oauth: UserOAuthModel,
+│    superuser_oauth: UserOAuthModel,
+│    verified_superuser_oauth: UserOAuthModel,
+│) -> BaseUserDatabase[UserOAuthModel, IDType]:
+│    class MockUserDatabase(BaseUserDatabase[UserOAuthModel, IDType]):
+│        async def get(self, id: UUID4) -> Optional[UserOAuthModel]:
+│            if id == user_oauth.id:
+│                return user_oauth
+│            if id == verified_user_oauth.id:
+│                return verified_user_oauth
+│            if id == inactive_user_oauth.id:
+│                return inactive_user_oauth
+│            if id == superuser_oauth.id:
+│                return superuser_oauth
+⋮
+│@pytest.fixture
+│def make_user_manager(mocker: MockerFixture):
+⋮
+│class MockTransport(BearerTransport):
+⋮
+
+tests/test_fastapi_users.py:
+⋮
+│@pytest_asyncio.fixture
+│async def test_app_client(
+│    secret,
+│    get_user_manager,
+│    mock_authentication,
+│    oauth_client,
+│    get_test_client,
+│) -> AsyncGenerator[httpx.AsyncClient, None]:
+│    fastapi_users = FastAPIUsers[UserModel, IDType](
+│        get_user_manager, [mock_authentication]
+⋮
+│    @app.get("/current-user", response_model=User)
+│    def current_user(user: UserModel = Depends(fastapi_users.current_user())):
+⋮
+
+tests/test_openapi.py:
+⋮
+│@pytest.fixture
+│def fastapi_users(get_user_manager, mock_authentication) -> FastAPIUsers:
+⋮

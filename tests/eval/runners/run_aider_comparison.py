@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Aider Repo Map Comparison Benchmark.
 
-Compares SemanticIR's task accuracy and token cost against Aider's repo map
+Compares CodeIR's task accuracy and token cost against Aider's repo map
 on the same task pack, same models, same scoring.
 
 Conditions:
-- semanticir_flow_v2: bearings.md → L3 orientation → L1 ranking
+- codeir_flow_v2: bearings.md → L3 orientation → L1 ranking
 - aider_repomap_1k: Aider map at 1024 token budget
 - aider_repomap_2k: Aider map at 2048 token budget
 - aider_repomap_4k: Aider map at 4096 token budget
@@ -48,7 +48,7 @@ RESULTS_DIR = ROOT / "tests" / "eval" / "results" / "aider_comparison"
 TASK_PACK_PATH = ROOT / "tests" / "eval" / "test_packs" / "task_benchmark_phase_b_24.json"
 
 CONDITIONS = (
-    "semanticir_flow_v2",
+    "codeir_flow_v2",
     "aider_repomap_1k",
     "aider_repomap_2k",
     "aider_repomap_4k",
@@ -96,7 +96,7 @@ def fetch_bearings(repo_path: Path) -> str:
 
 def fetch_l3_index(repo_path: Path) -> str:
     """Fetch all L3 IR rows."""
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return ""
     conn = connect(db_path)
@@ -157,8 +157,8 @@ Return JSON only with ranked_entity_ids and confidence."""
     return f"{system}\n\n{prompt}", count_tokens(system + prompt)
 
 
-def build_semanticir_prompt_legacy(task_query: str, repo_path: Path) -> Tuple[str, int]:
-    """Build prompt for SemanticIR flow condition (LEGACY - full L3)."""
+def build_codeir_prompt_legacy(task_query: str, repo_path: Path) -> Tuple[str, int]:
+    """Build prompt for CodeIR flow condition (LEGACY - full L3)."""
     bearings = fetch_bearings(repo_path)
     l3_index = fetch_l3_index(repo_path)
 
@@ -235,7 +235,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     return {}
 
 
-def parse_semanticir_entity_id(raw: str) -> str:
+def parse_codeir_entity_id(raw: str) -> str:
     """Extract entity ID from L3 row or raw entity ID.
 
     Handles formats:
@@ -274,7 +274,7 @@ def map_aider_response_to_entity_ids(
     qname_mapping: Dict[str, str],
     log_attempts: bool = False,
 ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
-    """Map Aider's qualified names to SemanticIR entity IDs.
+    """Map Aider's qualified names to CodeIR entity IDs.
 
     Rules:
     1. Strip file path prefixes (e.g., "fastapi_users/exceptions.py:Class" -> "Class")
@@ -408,8 +408,8 @@ def run_condition(
 
         start_time = time.time()
 
-        # SemanticIR uses two-phase filtered L3 approach
-        if condition == "semanticir_flow_v2":
+        # CodeIR uses two-phase filtered L3 approach
+        if condition == "codeir_flow_v2":
             try:
                 # Phase 1: Module selection from bearings
                 module_prompt, module_tokens = build_module_selection_prompt(
@@ -446,7 +446,7 @@ def run_condition(
                     input_tokens = module_tokens + l3_tokens
                 else:
                     # Fallback to full L3 if no modules selected
-                    prompt, input_tokens = build_semanticir_prompt_legacy(query, repo_path)
+                    prompt, input_tokens = build_codeir_prompt_legacy(query, repo_path)
                     input_tokens += module_tokens
 
                 response_text, _ = provider.complete(prompt, max_tokens=300)
@@ -499,8 +499,8 @@ def run_condition(
                 raw_ids, qname_mapping
             )
         else:
-            # SemanticIR returns L3 rows or entity IDs, extract just the ID
-            ranked_ids = [parse_semanticir_entity_id(x) for x in raw_ids]
+            # CodeIR returns L3 rows or entity IDs, extract just the ID
+            ranked_ids = [parse_codeir_entity_id(x) for x in raw_ids]
             ranked_ids = [x for x in ranked_ids if x]  # filter empty
 
         # Score
@@ -580,14 +580,14 @@ def generate_summary(
 
     lines.extend(["", "## Pairwise Comparison", ""])
 
-    sir = metrics_by_condition.get("semanticir_flow_v2", {})
+    sir = metrics_by_condition.get("codeir_flow_v2", {})
     for budget in ["1k", "2k", "4k"]:
         aider = metrics_by_condition.get(f"aider_repomap_{budget}", {})
         if sir and aider:
             top3_delta = (sir.get("top3_hit_rate", 0) - aider.get("top3_hit_rate", 0)) * 100
             token_delta = sir.get("tokens_per_task_input", 0) - aider.get("tokens_per_task_input", 0)
             lines.append(
-                f"SemanticIR v2 vs Aider ({budget}): "
+                f"CodeIR v2 vs Aider ({budget}): "
                 f"top3 delta = {top3_delta:+.1f}%, token delta = {token_delta:+.0f}"
             )
 

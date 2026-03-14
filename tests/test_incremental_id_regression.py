@@ -11,9 +11,9 @@ from index.indexer import index_repo
 class TestIncrementalIdRegression(unittest.TestCase):
     def _cfg(self) -> dict:
         return {
-            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".semanticir"],
+            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
             "extensions": [".py"],
-            "compression_level": "L1",
+            "compression_level": "Behavior",
         }
 
     def test_colliding_entity_ids_do_not_overwrite_unchanged_files(self) -> None:
@@ -30,7 +30,7 @@ class TestIncrementalIdRegression(unittest.TestCase):
             second = index_repo(repo, self._cfg())
             self.assertEqual(second.get("total_entities"), 2)
 
-            db_path = repo / ".semanticir" / "entities.db"
+            db_path = repo / ".codeir" / "entities.db"
             conn = sqlite3.connect(db_path)
             rows = conn.execute(
                 "SELECT id, file_path, qualified_name FROM entities ORDER BY file_path"

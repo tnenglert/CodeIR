@@ -1,6 +1,6 @@
 {
   "contract_version": "0.2.0-as-built",
-  "purpose": "Machine-readable SemanticIR contract for eval and drift detection.",
+  "purpose": "Machine-readable CodeIR contract for eval and drift detection.",
   "entity_prefixes": {
     "FN": "function",
     "AFN": "async_function",
@@ -9,7 +9,7 @@
     "CLS": "class"
   },
   "levels": {
-    "L0": {
+    "Source": {
       "format": "[TYPE ENTITY_ID @file_path:start_line]\\n<raw source>",
       "fields": ["TYPE", "ENTITY_ID", "file_path", "start_line", "raw_source"],
       "notes": [
@@ -17,17 +17,19 @@
         "No semantic compression"
       ]
     },
-    "L1": {
-      "format": "TYPE ENTITY_ID N=<name_token> [C=<calls>] [F=<flags>] [A=<assign_count>] [B=<bases>] [#DOMAIN] [#CATE]",
-      "required_fields": ["TYPE", "ENTITY_ID", "N"],
+    "Behavior": {
+      "format": "TYPE ENTITY_ID [C=<calls>] [F=<flags>] [A=<assign_count>] [B=<bases>] [#DOMAIN] [#CATE]",
+      "required_fields": ["TYPE", "ENTITY_ID"],
       "optional_fields": ["C", "F", "A", "B"],
       "optional_tags": ["#DOMAIN", "#CATE"],
       "field_semantics": {
-        "N": "Compressed name token (always present)",
         "C": "Calls and semantic references — omitted if no calls",
         "F": "Behavioral flags (sorted, concatenated) — omitted if no flags",
         "A": "Assignment operation count — omitted if zero",
         "B": "Class base references — omitted if no bases"
+      },
+      "removed_fields": {
+        "N": "Name token removed in v0.2 — redundant with entity ID which already carries semantic abbreviation via compact_stem"
       },
       "flags": {
         "A": "await encountered",
@@ -42,7 +44,7 @@
       "flag_order": "alphabetical",
       "omission_rule": "Fields with empty/zero values are omitted entirely rather than using placeholders"
     },
-    "L3": {
+    "Index": {
       "format": "TYPE ENTITY_ID [#DOMAIN] #CATE",
       "required_fields": ["TYPE", "ENTITY_ID", "#CATE"],
       "optional_tags": ["#DOMAIN"],
@@ -53,10 +55,6 @@
       "internal_only": {
         "pattern_id": "Computed and stored in ir_json for change detection, but omitted from text output (zero semantic signal at selection time)"
       }
-    },
-    "L2": {
-      "status": "implemented-but-out-of-scope",
-      "reason": "Excluded from current validation plan to avoid conflating harness quality with unresolved IR-design questions."
     }
   },
   "domain_tags": {
@@ -84,8 +82,8 @@
     "utils": "UTIL"
   },
   "canonical_preambles": {
-    "L1": "tests/eval/preambles/l1_preamble.md",
-    "L3": "tests/eval/preambles/l3_preamble.md"
+    "Behavior": "tests/eval/preambles/l1_preamble.md",
+    "Index": "tests/eval/preambles/l3_preamble.md"
   },
   "implementation_sources": [
     "ir/compressor.py",

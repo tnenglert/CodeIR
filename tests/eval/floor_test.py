@@ -1,7 +1,7 @@
 """Comprehensibility floor testing harness.
 
 Generates structured test packs with prompts and answer keys for evaluating
-how well LLMs understand SemanticIR compressed representations at each level.
+how well LLMs understand CodeIR compressed representations at each level.
 Does NOT make LLM calls — produces JSON test packs for external scoring.
 
 Capabilities tested:
@@ -56,7 +56,7 @@ def select_test_entities(
     Tries to pick entities from different complexity_class values and module
     categories to ensure broad coverage.
     """
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         raise FileNotFoundError(f"entities DB not found: {db_path}")
 
@@ -109,7 +109,7 @@ def _get_entity_ir(
     repo_path: Path, entity_id: str, level: str,
 ) -> Optional[str]:
     """Fetch the IR text for an entity at a specific level."""
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     conn = connect(db_path)
     row = conn.execute(
         "SELECT ir_text FROM ir_rows WHERE entity_id = ? AND mode = ?",
@@ -131,7 +131,7 @@ def _get_entity_source(repo_path: Path, entity: Dict[str, Any]) -> str:
 
 def _build_identification_prompt(ir_text: str, level: str) -> str:
     return (
-        f"You are given the following SemanticIR representation (level {level}) of a Python entity:\n\n"
+        f"You are given the following CodeIR representation (level {level}) of a Python entity:\n\n"
         f"```\n{ir_text}\n```\n\n"
         "What does this entity do? Describe its purpose, behavior, and key operations."
     )
@@ -142,7 +142,7 @@ def _build_differentiation_prompt(
 ) -> str:
     numbered = "\n".join(f"{i+1}. `{line}`" for i, line in enumerate(ir_lines))
     return (
-        f"You are given {len(ir_lines)} SemanticIR representations (level {level}):\n\n"
+        f"You are given {len(ir_lines)} CodeIR representations (level {level}):\n\n"
         f"{numbered}\n\n"
         f"Which one handles: {target_description}?\n"
         "Answer with the number only."
@@ -155,7 +155,7 @@ def _build_triage_prompt(
     numbered = "\n".join(f"{i+1}. `{line}`" for i, line in enumerate(ir_lines))
     return (
         f"Bug report: {bug_description}\n\n"
-        f"You are given {len(ir_lines)} SemanticIR representations (level {level}):\n\n"
+        f"You are given {len(ir_lines)} CodeIR representations (level {level}):\n\n"
         f"{numbered}\n\n"
         "Which entities are most likely involved in this bug? List the numbers."
     )
@@ -163,7 +163,7 @@ def _build_triage_prompt(
 
 def _build_reconstruction_prompt(ir_text: str, level: str) -> str:
     return (
-        f"You are given the following SemanticIR representation (level {level}) of a Python entity:\n\n"
+        f"You are given the following CodeIR representation (level {level}) of a Python entity:\n\n"
         f"```\n{ir_text}\n```\n\n"
         "Write pseudocode that approximates the original implementation of this entity."
     )

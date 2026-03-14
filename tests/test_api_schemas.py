@@ -11,9 +11,9 @@ from tools.api_schemas import expand_entity_code, get_entity_ir, search_entities
 class TestApiSchemas(unittest.TestCase):
     def _cfg(self) -> dict:
         return {
-            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".semanticir"],
+            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
             "extensions": [".py"],
-            "compression_level": "L1",
+            "compression_level": "Behavior",
         }
 
     def test_tool_wrappers_use_real_index_data(self) -> None:
@@ -32,7 +32,7 @@ class TestApiSchemas(unittest.TestCase):
             self.assertGreater(search["count"], 0)
             entity_id = search["results"][0]["entity_id"]
 
-            ir = get_entity_ir(entity_id, repo_path=repo, level="L1")
+            ir = get_entity_ir(entity_id, repo_path=repo, level="Behavior")
             self.assertTrue(ir["ok"])
             self.assertEqual(ir["entity"]["entity_id"], entity_id)
             self.assertIn("ir_text", ir["entity"])

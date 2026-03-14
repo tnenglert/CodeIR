@@ -1,4 +1,4 @@
-# SemanticIR – Future Considerations
+# CodeIR – Future Considerations
 
 **Status:** Not part of v0.1
 

@@ -1,4 +1,4 @@
-"""Aggregation queries for SemanticIR CLI stats."""
+"""Aggregation queries for CodeIR CLI stats."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
 
-from index.store.db import connect
+from index.store.db import connect, table_exists, column_names
 
 
 def _meta_int(conn: sqlite3.Connection, key: str, default: int = 0) -> int:
@@ -24,18 +24,10 @@ def _meta_str(conn: sqlite3.Connection, key: str, default: str = "") -> str:
     return row[0] if row else default
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,),
-    ).fetchone()
-    return row[0] > 0
-
-
 def get_stats(repo_path: Path) -> Dict[str, Any]:
     """Compute repository stats from entities.db and mapping.db."""
-    entities_db = repo_path / ".semanticir" / "entities.db"
-    mapping_db = repo_path / ".semanticir" / "mapping.db"
+    entities_db = repo_path / ".codeir" / "entities.db"
+    mapping_db = repo_path / ".codeir" / "mapping.db"
 
     if not entities_db.exists():
         raise FileNotFoundError(f"entities DB not found: {entities_db}")
@@ -52,10 +44,10 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
     ).fetchall()
     files_with_entities = int(entities_conn.execute("SELECT COUNT(DISTINCT file_path) FROM entities").fetchone()[0])
     python_files_indexed = _meta_int(entities_conn, "python_files_indexed", default=0)
-    compression_level = _meta_str(entities_conn, "compression_level", default="L1")
+    compression_level = _meta_str(entities_conn, "compression_level", default="Behavior")
 
     # Per-level stats
-    cols = {row[1] for row in entities_conn.execute("PRAGMA table_info(ir_rows)").fetchall()}
+    cols = column_names(entities_conn, "ir_rows")
     has_mode = "mode" in cols
     has_token_cols = "source_token_count" in cols and "ir_token_count" in cols
 
@@ -104,7 +96,7 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
 
     # Per-category stats (requires modules table)
     category_stats: List[Dict[str, Any]] = []
-    if _table_exists(entities_conn, "modules"):
+    if table_exists(entities_conn, "modules"):
         cat_rows = entities_conn.execute(
             "SELECT m.category, COUNT(DISTINCT m.file_path), COUNT(e.id) "
             "FROM modules m LEFT JOIN entities e ON e.file_path = m.file_path "
@@ -119,7 +111,7 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
 
     # Complexity class distribution
     complexity_stats: Dict[str, int] = {}
-    ecols = {row[1] for row in entities_conn.execute("PRAGMA table_info(entities)").fetchall()}
+    ecols = column_names(entities_conn, "entities")
     if "complexity_class" in ecols:
         cc_rows = entities_conn.execute(
             "SELECT complexity_class, COUNT(*) FROM entities "

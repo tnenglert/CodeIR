@@ -16,7 +16,7 @@ from index.store.db import connect
 
 
 def _load_entity_rows(repo_path: Path) -> List[Dict[str, Any]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         raise FileNotFoundError(f"entities DB not found: {db_path}")
 

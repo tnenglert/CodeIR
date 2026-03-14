@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SEMANTICIR_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CLI="${SEMANTICIR_DIR}/cli.py"
-DEFAULT_FIXTURE="${SEMANTICIR_DIR}/_fastapi-users-master"
-ARTIFACTS_DIR="${SEMANTICIR_DIR}/tests/_artifacts"
+CODEIR_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CLI="${CODEIR_DIR}/cli.py"
+DEFAULT_FIXTURE="${CODEIR_DIR}/_fastapi-users-master"
+ARTIFACTS_DIR="${CODEIR_DIR}/tests/_artifacts"
 TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 
 FIXTURE_PATH="${1:-${DEFAULT_FIXTURE}}"
@@ -19,8 +19,8 @@ fi
 
 mkdir -p "${ARTIFACTS_DIR}"
 
-echo "== SemanticIR Compression Eval Quick Start =="
-echo "semanticir_dir: ${SEMANTICIR_DIR}"
+echo "== CodeIR Compression Eval Quick Start =="
+echo "codeir_dir: ${CODEIR_DIR}"
 echo "fixture_path: ${FIXTURE_PATH}"
 echo "artifacts_dir: ${ARTIFACTS_DIR}"
 echo "timestamp: ${TIMESTAMP}"
@@ -31,7 +31,7 @@ python3 "${CLI}" index "${FIXTURE_PATH}" --mode hybrid
 echo
 
 echo "[2/6] Generate random before/after compression samples"
-python3 -m unittest "${SEMANTICIR_DIR}/tests/test_compression_sampling.py"
+python3 -m unittest "${CODEIR_DIR}/tests/test_compression_sampling.py"
 echo
 
 echo "[3/6] Write labels template + candidate labels from latest sample artifact"

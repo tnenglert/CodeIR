@@ -61,9 +61,9 @@ class TestIncrementalIndexing(unittest.TestCase):
         compare = self.run_cli("compare", entity_id, "--repo-path", str(FASTAPI_FIXTURE))
         self.assertEqual(compare.returncode, 0, msg=compare.stderr or compare.stdout)
         self.assertIn(entity_id, compare.stdout)
-        # Should show at least L0 and L1 sections
+        # Should show at least Source and Behavior sections
         self.assertTrue(
-            "L0" in compare.stdout or "L1" in compare.stdout,
+            "Source" in compare.stdout or "Behavior" in compare.stdout,
             msg=f"Expected level headers in compare output: {compare.stdout}",
         )
 

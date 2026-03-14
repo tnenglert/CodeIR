@@ -19,7 +19,7 @@ from eval.providers import create_provider, select_provider_interactive, PROVIDE
 DEFAULT_SAMPLE_ENTITIES = 5
 
 
-DEFAULT_L3_PREAMBLE = """SemanticIR L3 tokens use this format:
+DEFAULT_L3_PREAMBLE = """CodeIR L3 tokens use this format:
 TYPE ENTITY_ID [#DOMAIN] #CATEGORY
 
 Domain tags: #HTTP = HTTP/networking, #AUTH = Authentication

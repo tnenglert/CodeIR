@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
-import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from index.indexer import index_repo, map_legacy_mode_to_level
-from index.store.db import connect
+from tests.eval.ranking import rank_by_query
+from index.store.fetch import load_entity_ir_rows
 
 
 def _load_labels(labels_path: Path) -> List[Dict[str, Any]]:
@@ -29,73 +28,6 @@ def _load_labels(labels_path: Path) -> List[Dict[str, Any]]:
     if not out:
         raise ValueError("labels file did not contain any valid entries")
     return out
-
-
-def _load_rows(repo_path: Path, level: Optional[str] = None) -> List[Dict[str, Any]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
-    if not db_path.exists():
-        raise FileNotFoundError(f"entities DB not found: {db_path}")
-
-    conn = connect(db_path)
-    conn.row_factory = sqlite3.Row
-    if level:
-        rows = conn.execute(
-            """
-            SELECT
-              e.id AS entity_id,
-              e.qualified_name,
-              e.kind,
-              r.ir_text
-            FROM entities AS e
-            JOIN ir_rows AS r ON r.entity_id = e.id
-            WHERE r.mode = ?
-            """,
-            (level,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT
-              e.id AS entity_id,
-              e.qualified_name,
-              e.kind,
-              r.ir_text
-            FROM entities AS e
-            JOIN ir_rows AS r ON r.entity_id = e.id
-            """
-        ).fetchall()
-    conn.close()
-    return [
-        {
-            "entity_id": str(row["entity_id"]),
-            "qualified_name": str(row["qualified_name"]),
-            "kind": str(row["kind"]),
-            "ir_text": str(row["ir_text"]),
-        }
-        for row in rows
-    ]
-
-
-def _score_query(row: Dict[str, Any], query_terms: List[str]) -> int:
-    qn = str(row["qualified_name"]).lower()
-    ir = str(row["ir_text"]).lower()
-    kind = str(row["kind"]).lower()
-    score = 0
-    for t in query_terms:
-        if t in qn:
-            score += 4
-        if t in ir:
-            score += 3
-        if t in kind:
-            score += 1
-    return score
-
-
-def _rank_rows(rows: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
-    terms = [t for t in re.findall(r"[A-Za-z0-9_]+", query.lower()) if len(t) >= 2]
-    scored = [(_score_query(row, terms), row) for row in rows]
-    scored.sort(key=lambda x: (-x[0], x[1]["entity_id"]))
-    return [row for _, row in scored]
 
 
 def _build_prompt(mode: str, query: str, ranked_rows: List[Dict[str, Any]]) -> str:
@@ -149,11 +81,11 @@ def generate_prompt_benchmark_pack(
         cfg["compression_mode"] = mode
         cfg["compression_level"] = level
         index_repo(repo_path=repo_path, config=cfg)
-        rows = _load_rows(repo_path, level=level)
+        rows = load_entity_ir_rows(repo_path, level=level)
 
         lines: List[str] = []
         for idx, item in enumerate(labels, start=1):
-            ranked = _rank_rows(rows, item["query"])[: max(1, top_k)]
+            ranked = rank_by_query(rows, item["query"], top_k=top_k)
             case_id = f"C{idx:03d}"
             prompt = _build_prompt(mode=mode, query=item["query"], ranked_rows=ranked)
             payload = {
@@ -229,11 +161,11 @@ def generate_prompt_benchmark_pack(
             "4. Write predictions JSONL rows containing `case_id`, `mode`, and `selected_entity_ids`.",
             "",
             "## Evaluate Results",
-            "Run from the SemanticIR repo root (where `index/` is importable):",
+            "Run from the CodeIR repo root (where `index/` is importable):",
             "```bash",
             "python3 - <<'PY'",
             "from pathlib import Path",
-            "from index.prompt_scoring import score_llm_predictions, render_llm_scoring_markdown",
+            "from tests.eval.prompt_scoring import score_llm_predictions, render_llm_scoring_markdown",
             "",
             f"pack = Path(r\"{output_dir}\")",
             "answer_key = pack / \"prompt_benchmark_answer_key.json\"",

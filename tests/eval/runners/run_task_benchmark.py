@@ -4,7 +4,7 @@ Conditions:
 - raw_baseline: internal search + raw source candidates
 - naive_rag_bm25: BM25 over source-only retrieval corpus
 - naive_rag_embed: local MiniLM embedding retrieval over source-only corpus
-- semanticir_flow_v2: filtered-L3 orientation (module select -> entity select) + L1 reasoning
+- codeir_flow_v2: filtered-L3 orientation (module select -> entity select) + L1 reasoning
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ CONDITIONS = (
     "raw_baseline",
     "naive_rag_bm25",
     "naive_rag_embed",
-    "semanticir_flow_v2",
+    "codeir_flow_v2",
 )
 FCR_THRESHOLDS = (3, 4, 5)
 
@@ -166,7 +166,7 @@ def _fetch_l3_index(
     repo_path: Path,
     entity_id_filter: Optional[Sequence[str]] = None,
 ) -> str:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return ""
     conn = connect(db_path)
@@ -212,7 +212,7 @@ def _build_orientation_selection_context(
 
 
 def _load_index_entity_ids(repo_path: Path) -> set[str]:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return set()
     conn = connect(db_path)
@@ -223,7 +223,7 @@ def _load_index_entity_ids(repo_path: Path) -> set[str]:
 
 def _build_module_id_file_path_maps(repo_path: Path) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Build deterministic module-id mappings that match bearings generation."""
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return {}, {}
     conn = connect(db_path)
@@ -253,7 +253,7 @@ def _expand_modules_to_entity_ids(
     module_file_paths: Sequence[str],
     max_module_entity_candidates: int,
 ) -> Tuple[List[str], Dict[str, int]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return [], {}
 
@@ -292,7 +292,7 @@ def _expand_modules_to_entity_ids(
 
 
 def _build_entity_family_index(repo_path: Path) -> Dict[str, List[str]]:
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         return {}
     conn = connect(db_path)
@@ -827,7 +827,7 @@ def _print_summary(summary: Dict[str, Any]) -> None:
 
     gate = summary.get("success_gate", {})
     if gate.get("vs_bm25") or gate.get("vs_embed"):
-        print("\nSuccess gate (semanticir_flow_v2 must beat both naive RAG baselines):")
+        print("\nSuccess gate (codeir_flow_v2 must beat both naive RAG baselines):")
         if gate.get("vs_bm25"):
             print(
                 f"- vs BM25: accuracy={gate['vs_bm25']['accuracy_better']} warm_tokens={gate['vs_bm25']['warm_tokens_better']}"
@@ -858,7 +858,7 @@ def _validate_smoke_test_results(results: Dict[str, Any]) -> Tuple[bool, List[st
             continue
 
         # Check 1: Module selection failures (all zeros = broken)
-        if cond == "semanticir_flow_v2":
+        if cond == "codeir_flow_v2":
             module_counts = [len(t.get("module_selection_module_ids", [])) for t in tasks]
             if all(c == 0 for c in module_counts):
                 issues.append(f"{cond}: Module selection returned 0 modules for all tasks (prefix mismatch?)")
@@ -1003,7 +1003,7 @@ def run_task_benchmark(
             module_selection_tokens = 0
             module_selection_l3_tokens = 0
             gt_in_selected_modules = 0
-            orientation_mode_used = orientation_mode_norm if condition == "semanticir_flow_v2" else ""
+            orientation_mode_used = orientation_mode_norm if condition == "codeir_flow_v2" else ""
             orientation_phase_tokens = 0
             api_tokens_0 = 0
             if condition == "raw_baseline":
@@ -1012,7 +1012,7 @@ def run_task_benchmark(
                 if not candidates:
                     candidates = _retrieve_bm25(retriever=bm25, query=query, top_k=top_k)
                     retrieval_backend = "bm25_fallback_from_internal_like_l0"
-            elif condition == "semanticir_flow_v2":
+            elif condition == "codeir_flow_v2":
                 candidates = []
                 retrieval_backend = (
                     "orientation_filtered_l3_llm_selection"
@@ -1339,7 +1339,7 @@ def run_task_benchmark(
     }
 
     # Build success gate and pairwise deltas only when all required conditions are present
-    sir = condition_summaries.get("semanticir_flow_v2")
+    sir = condition_summaries.get("codeir_flow_v2")
     b = condition_summaries.get("naive_rag_bm25")
     e = condition_summaries.get("naive_rag_embed")
 

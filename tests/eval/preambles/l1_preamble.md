@@ -1,4 +1,4 @@
-SemanticIR is a compressed representation of Python code entities.
+CodeIR is a compressed representation of Python code entities.
 
 Entity types:
 - MT=method

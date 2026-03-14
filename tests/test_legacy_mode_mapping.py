@@ -11,15 +11,15 @@ from index.indexer import index_repo, map_legacy_mode_to_level
 class TestLegacyModeMapping(unittest.TestCase):
     def _cfg(self, mode: str) -> dict:
         return {
-            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".semanticir"],
+            "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
             "extensions": [".py"],
             "compression_mode": mode,
         }
 
     def test_mode_aliases_map_to_expected_levels(self) -> None:
-        self.assertEqual(map_legacy_mode_to_level("a"), "L3")
-        self.assertEqual(map_legacy_mode_to_level("b"), "L1")
-        self.assertEqual(map_legacy_mode_to_level("hybrid"), "L2")
+        self.assertEqual(map_legacy_mode_to_level("a"), "Index")
+        self.assertEqual(map_legacy_mode_to_level("b"), "Behavior")
+        self.assertEqual(map_legacy_mode_to_level("hybrid"), "Behavior")
 
     def test_index_repo_honors_legacy_mode_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -31,7 +31,7 @@ class TestLegacyModeMapping(unittest.TestCase):
                 result = index_repo(repo, self._cfg(mode))
                 self.assertEqual(result.get("compression_level"), expected_level)
 
-                conn = sqlite3.connect(repo / ".semanticir" / "entities.db")
+                conn = sqlite3.connect(repo / ".codeir" / "entities.db")
                 modes = {row[0] for row in conn.execute("SELECT DISTINCT mode FROM ir_rows").fetchall()}
                 conn.close()
                 self.assertEqual(modes, {expected_level})

@@ -19,7 +19,7 @@ from eval.providers import AnthropicProvider
 DEFAULT_SAMPLE_ENTITIES = 5
 
 
-DEFAULT_L1_PREAMBLE = """SemanticIR is a compressed representation of Python code entities. Notation guide:
+DEFAULT_L1_PREAMBLE = """CodeIR is a compressed representation of Python code entities. Notation guide:
 
 Entity types: MT=method, FN=function, CLS=class
 Entity IDs: STEM or STEM.XX (e.g., AUTH, RDTKN.03). Full stable ID = TYPE.STEM.SUFFIX

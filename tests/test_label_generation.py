@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from index.labelgen import generate_candidate_labels, write_labels_template
+from tests.eval.labelgen import generate_candidate_labels, write_labels_template
 
 
 SAMPLE_ARTIFACT = """# Compression Sample Report

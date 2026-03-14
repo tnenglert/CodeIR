@@ -1,1 +1,1 @@
-"""Storage helpers for SemanticIR index."""
+"""Storage helpers for CodeIR index."""

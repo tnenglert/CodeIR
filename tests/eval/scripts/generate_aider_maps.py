@@ -2,7 +2,7 @@
 """Generate Aider repo maps at different token budgets for benchmark comparison.
 
 This script uses Aider's internal RepoMap class to generate repo maps
-that can be compared against SemanticIR's compression output.
+that can be compared against CodeIR's compression output.
 """
 
 import os
@@ -77,7 +77,7 @@ def generate_repo_map(repo_path: Path, map_tokens: int) -> str:
 
 
 def count_tokens(text: str) -> int:
-    """Count tokens using tiktoken (same as SemanticIR benchmarks)."""
+    """Count tokens using tiktoken (same as CodeIR benchmarks)."""
     try:
         import tiktoken
         enc = tiktoken.get_encoding("cl100k_base")

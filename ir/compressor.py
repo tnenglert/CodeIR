@@ -1,10 +1,9 @@
-"""IR generation from extracted entities at four compression levels.
+"""IR generation from extracted entities at three compression levels.
 
 Levels:
-  L0 — raw source with entity boundary markers (baseline)
-  L1 — semantic-lite: opcode, entity_id, name_token, calls, flags, assigns
-  L2 — aggressive: opcode, entity_id, param_types, return_type, flags
-  L3 — structural-tag: opcode, entity_id, domain tag, category tag
+  Source   — raw source with entity boundary markers (baseline)
+  Behavior — semantic-lite: opcode, entity_id, name_token, calls, flags, assigns
+  Index    — structural-tag: opcode, entity_id, domain tag, category tag
 """
 
 from __future__ import annotations
@@ -17,11 +16,11 @@ from ir.stable_ids import make_pattern_id
 from ir.token_count import count_tokens
 from index.locator import extract_code_slice
 
-VALID_LEVELS = {"L0", "L1", "L2", "L3", "all"}
+VALID_LEVELS = {"Source", "Behavior", "Index", "all", "Behavior+Index"}
 PASSTHROUGH_TOKEN_THRESHOLD_DEFAULT = 12
 
 
-def _kind_opcode(kind: str) -> str:
+def kind_to_opcode(kind: str) -> str:
     return {
         "function": "FN",
         "async_function": "AFN",
@@ -35,7 +34,7 @@ def _kind_opcode(kind: str) -> str:
 # Level builders
 # ---------------------------------------------------------------------------
 
-def _build_L0(entity: dict, repo_path: Path) -> str:
+def _build_source(entity: dict, repo_path: Path) -> str:
     """Raw source with entity boundary markers."""
     source = extract_code_slice(
         repo_path=repo_path,
@@ -43,11 +42,11 @@ def _build_L0(entity: dict, repo_path: Path) -> str:
         start_line=int(entity["start_line"]),
         end_line=int(entity["end_line"]),
     )
-    opcode = _kind_opcode(entity["kind"])
+    opcode = kind_to_opcode(entity["kind"])
     return f"[{opcode} {entity['id']} @{entity['file_path']}:{entity['start_line']}]\n{source}"
 
 
-def _build_L1(
+def _build_behavior(
     entity: dict,
     name_token: str,
     calls: List[str],
@@ -68,7 +67,7 @@ def _build_L1(
     - A= omitted if zero assigns
     - B= omitted if no base classes
     """
-    opcode = _kind_opcode(entity["kind"])
+    opcode = kind_to_opcode(entity["kind"])
 
     # Build token with only non-empty fields (N= removed - redundant with entity ID)
     parts = [opcode, entity["id"]]
@@ -92,16 +91,7 @@ def _build_L1(
     return " ".join(parts)
 
 
-def _build_L2(entity: dict, param_types: List[str], return_type: Optional[str], flags: str) -> str:
-    """Aggressive: type signatures + flags only."""
-    opcode = _kind_opcode(entity["kind"])
-    params = ",".join(param_types) if param_types else "-"
-    ret = return_type or "?"
-    flag_text = flags or "-"
-    return f"{opcode} {entity['id']} P=({params})->{ret};F={flag_text}"
-
-
-def _build_L3(entity: dict, pattern_id: str, module_category: str, module_domain: str = "") -> str:
+def _build_index(entity: dict, pattern_id: str, module_category: str, module_domain: str = "") -> str:
     """Structural tag row: entity type, ID, domain tag, category tag.
 
     Format: MT SEND.03 #HTTP #CORE
@@ -110,7 +100,7 @@ def _build_L3(entity: dict, pattern_id: str, module_category: str, module_domain
     Note: pattern_id is kept in storage for change detection but omitted from
     the text representation served to models (zero semantic signal for selection).
     """
-    opcode = _kind_opcode(entity["kind"])
+    opcode = kind_to_opcode(entity["kind"])
     cat = module_category[:4].upper() if module_category else "UNKN"
     domain = module_domain.upper() if module_domain and module_domain != "unknown" else ""
 
@@ -132,12 +122,12 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
                    module_domain: str = "") -> dict:
     """Structured JSON representation for programmatic consumption."""
     base = {
-        "op": _kind_opcode(entity["kind"]),
+        "op": kind_to_opcode(entity["kind"]),
         "id": entity["id"],
         "level": level,
         "sp": [entity["start_line"], entity["end_line"]],
     }
-    if level == "L1":
+    if level == "Behavior":
         base["n"] = name_token
         base["calls"] = calls
         base["flags"] = flags
@@ -147,11 +137,7 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
             base["category"] = module_category
         if module_domain and module_domain != "unknown":
             base["domain"] = module_domain
-    elif level == "L2":
-        base["param_types"] = param_types
-        base["return_type"] = return_type
-        base["flags"] = flags
-    elif level == "L3":
+    elif level == "Index":
         base["pattern_id"] = pattern_id
         base["category"] = module_category
     return base
@@ -164,7 +150,7 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
 def build_ir_rows(
     entities: Iterable[dict],
     abbreviations: Dict[str, Dict[str, str]],
-    compression_level: str = "L1",
+    compression_level: str = "Behavior",
     repo_path: Optional[Path] = None,
     module_categories: Optional[Dict[str, str]] = None,
     module_domains: Optional[Dict[str, str]] = None,
@@ -175,19 +161,22 @@ def build_ir_rows(
     Args:
         entities: Extracted entities with semantic metadata.
         abbreviations: Token maps for names/files/calls.
-        compression_level: One of 'L0', 'L1', 'L2', 'L3', or 'all'.
-        repo_path: Repository root (required for L0 source extraction).
-        module_categories: {file_path: category} from classifier (required for L3).
-        module_domains: {file_path: domain} from classifier (required for L3 domain tags).
-        passthrough_threshold: Entities with <= this many source tokens emit L0 for all levels.
+        compression_level: One of 'Source', 'Behavior', 'Index', or 'all'.
+        repo_path: Repository root (required for Source extraction).
+        module_categories: {file_path: category} from classifier (required for Index).
+        module_domains: {file_path: domain} from classifier (required for Index domain tags).
+        passthrough_threshold: Entities with <= this many source tokens emit Source for all levels.
     """
-    level = compression_level.strip().upper()
-    if level == "ALL":
-        levels_to_generate = ["L0", "L1", "L2", "L3"]
-    elif level in ("L0", "L1", "L2", "L3"):
+    level = compression_level.strip()
+    level_upper = level.upper()
+    if level_upper == "ALL":
+        levels_to_generate = ["Source", "Behavior", "Index"]
+    elif level_upper == "BEHAVIOR+INDEX":
+        levels_to_generate = ["Behavior", "Index"]
+    elif level in ("Source", "Behavior", "Index"):
         levels_to_generate = [level]
     else:
-        levels_to_generate = ["L1"]
+        levels_to_generate = ["Behavior", "Index"]
     module_categories = module_categories or {}
     module_domains = module_domains or {}
     name_map = abbreviations.get("entity_name", {})
@@ -214,7 +203,7 @@ def build_ir_rows(
         module_category = module_categories.get(str(entity.get("file_path", "")), "core_logic")
         module_domain = module_domains.get(str(entity.get("file_path", "")), "")
 
-        # Passthrough: tiny entities emit L0 regardless of requested level
+        # Passthrough: tiny entities emit Source regardless of requested level
         is_passthrough = False
         if passthrough_threshold > 0 and repo_path is not None:
             source_text = extract_code_slice(
@@ -227,24 +216,24 @@ def build_ir_rows(
             is_passthrough = src_tokens <= passthrough_threshold
 
         for lvl in levels_to_generate:
-            if is_passthrough and lvl != "L0":
-                # For passthrough entities, all non-L0 levels get the L0 representation
-                ir_text = _build_L0(entity, repo_path) if repo_path else f"ENT {entity['id']}"
+            if is_passthrough and lvl != "Source":
+                # For passthrough entities, all non-Source levels get the Source representation
+                ir_text = _build_source(entity, repo_path) if repo_path else f"ENT {entity['id']}"
                 ir_json = _build_ir_json(
-                    entity, "L0", name_token, calls, flags, assigns, bases,
+                    entity, "Source", name_token, calls, flags, assigns, bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
-            elif lvl == "L0":
+            elif lvl == "Source":
                 if repo_path is None:
                     ir_text = f"ENT {entity['id']}"
                 else:
-                    ir_text = _build_L0(entity, repo_path)
+                    ir_text = _build_source(entity, repo_path)
                 ir_json = _build_ir_json(
-                    entity, "L0", name_token, calls, flags, assigns, bases,
+                    entity, "Source", name_token, calls, flags, assigns, bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
-            elif lvl == "L1":
-                ir_text = _build_L1(
+            elif lvl == "Behavior":
+                ir_text = _build_behavior(
                     entity,
                     name_token,
                     calls,
@@ -255,19 +244,13 @@ def build_ir_rows(
                     module_domain=module_domain,
                 )
                 ir_json = _build_ir_json(
-                    entity, "L1", name_token, calls, flags, assigns, bases,
+                    entity, "Behavior", name_token, calls, flags, assigns, bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
-            elif lvl == "L2":
-                ir_text = _build_L2(entity, param_types, return_type, flags)
+            elif lvl == "Index":
+                ir_text = _build_index(entity, pattern_id, module_category, module_domain)
                 ir_json = _build_ir_json(
-                    entity, "L2", name_token, calls, flags, assigns, bases,
-                    pattern_id, param_types, return_type, module_category, module_domain,
-                )
-            elif lvl == "L3":
-                ir_text = _build_L3(entity, pattern_id, module_category, module_domain)
-                ir_json = _build_ir_json(
-                    entity, "L3", name_token, calls, flags, assigns, bases,
+                    entity, "Index", name_token, calls, flags, assigns, bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
             else:

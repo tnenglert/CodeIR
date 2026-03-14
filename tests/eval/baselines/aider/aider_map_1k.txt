@@ -1,0 +1,152 @@
+
+docs/src/db_sqlalchemy.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+docs/src/db_sqlalchemy_access_tokens.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+docs/src/db_sqlalchemy_oauth.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+examples/sqlalchemy-oauth/app/db.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+examples/sqlalchemy/app/db.py:
+⋮
+│async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+│
+⋮
+
+fastapi_users/authentication/authenticator.py:
+⋮
+│def name_to_variable_name(name: str) -> str:
+⋮
+│def name_to_strategy_variable_name(name: str) -> str:
+⋮
+
+fastapi_users/authentication/backend.py:
+⋮
+│class AuthenticationBackend(Generic[models.UP, models.ID]):
+⋮
+
+fastapi_users/authentication/transport/cookie.py:
+⋮
+│class CookieTransport(Transport):
+│    scheme: APIKeyCookie
+│
+⋮
+│    def _set_login_cookie(self, response: Response, token: str) -> Response:
+⋮
+│    def _set_logout_cookie(self, response: Response) -> Response:
+⋮
+
+fastapi_users/db/base.py:
+⋮
+│class BaseUserDatabase(Generic[UP, ID]):
+⋮
+│UserDatabaseDependency = DependencyCallable[BaseUserDatabase[UP, ID]]
+
+fastapi_users/exceptions.py:
+⋮
+│class FastAPIUsersException(Exception):
+⋮
+│class UserNotExists(FastAPIUsersException):
+⋮
+│class UserInactive(FastAPIUsersException):
+⋮
+│class InvalidVerifyToken(FastAPIUsersException):
+⋮
+│class InvalidResetPasswordToken(FastAPIUsersException):
+⋮
+│class InvalidPasswordException(FastAPIUsersException):
+⋮
+
+fastapi_users/jwt.py:
+⋮
+│def _get_secret_value(secret: SecretType) -> str:
+⋮
+
+fastapi_users/manager.py:
+⋮
+│class BaseUserManager(Generic[models.UP, models.ID]):
+│    """
+│    User management logic.
+│
+│    :attribute reset_password_token_secret: Secret to encode reset password token.
+│    :attribute reset_password_token_lifetime_seconds: Lifetime of reset password token.
+│    :attribute reset_password_token_audience: JWT audience of reset password token.
+│    :attribute verification_token_secret: Secret to encode verification token.
+│    :attribute verification_token_lifetime_seconds: Lifetime of verification token.
+│    :attribute verification_token_audience: JWT audience of verification token.
+│
+⋮
+│    def parse_id(self, value: Any) -> models.ID:
+⋮
+│class UUIDIDMixin:
+│    def parse_id(self, value: Any) -> uuid.UUID:
+│        if isinstance(value, uuid.UUID):
+│            return value
+│        try:
+│            return uuid.UUID(value)
+│        except ValueError as e:
+⋮
+│class IntegerIDMixin:
+│    def parse_id(self, value: Any) -> int:
+│        if isinstance(value, float):
+│            raise exceptions.InvalidID()
+│        try:
+│            return int(value)
+│        except ValueError as e:
+⋮
+
+fastapi_users/openapi.py:
+⋮
+│OpenAPIResponseType = dict[Union[int, str], dict[str, Any]]
+
+fastapi_users/password.py:
+⋮
+│class PasswordHelperProtocol(Protocol):
+│    def verify_and_update(
+│        self, plain_password: str, hashed_password: str
+⋮
+│class PasswordHelper(PasswordHelperProtocol):
+│    def __init__(self, password_hash: Optional[PasswordHash] = None) -> None:
+│        if password_hash is None:
+│            self.password_hash = PasswordHash(
+│                (
+│                    Argon2Hasher(),
+│                    BcryptHasher(),
+│                )
+│            )
+│        else:
+⋮
+│    def verify_and_update(
+│        self, plain_password: str, hashed_password: str
+⋮
+
+fastapi_users/schemas.py:
+⋮
+│if PYDANTIC_V2:  # pragma: no cover
+│
+│    def model_dump(model: BaseModel, *args, **kwargs) -> dict[str, Any]:
+⋮
+│    def model_validate(schema: type[SCHEMA], obj: Any, *args, **kwargs) -> SCHEMA:
+⋮
+│else:  # pragma: no cover  # type: ignore
+│
+│    def model_dump(model: BaseModel, *args, **kwargs) -> dict[str, Any]:
+⋮
+│    def model_validate(schema: type[SCHEMA], obj: Any, *args, **kwargs) -> SCHEMA:
+⋮

@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""SemanticIR CLI entrypoint.
+"""CodeIR CLI entrypoint.
 
 Commands:
+  init         — Full setup: index + bearings + rules in one step
   index        — Index a repository with multi-pass pipeline
   search       — Search entities in an indexed repository
   show         — Display compressed IR for an entity
   expand       — Display raw source code for an entity
   compare      — Side-by-side comparison of all compression levels for an entity
+  callers      — Show what calls a given entity (reverse lookup)
+  impact       — Reverse dependency analysis — what breaks if this changes
+  scope        — Minimal context needed to safely modify an entity
+  grep         — Grep source files with IR context for matching entities
   stats        — Show repository index statistics
   module-map   — Display classified module map with dependencies
   bearings     — Generate bearings.md agent orientation context file
+  rules        — Generate .claude/rules/CodeIR.md agent instructions with repo-specific examples
   eval         — Evaluate compression levels side-by-side
   floor-test   — Comprehensibility floor testing (generate/score)
 """
@@ -24,23 +30,23 @@ from typing import Any, Dict
 
 from index.indexer import index_repo, map_legacy_mode_to_level
 from index.locator import extract_code_slice
-from index.search import search_entities
-from index.store.db import connect
+from index.search import compute_impact, compute_scope, grep_entities, search_entities
+from index.store.db import column_names, connect
 from index.store.fetch import get_entity_all_levels, get_entity_location, get_entity_with_ir
 from index.store.stats import get_stats
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".semanticir"],
+    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
     "extensions": [".py"],
-    "compression_level": "L1",
+    "compression_level": "Behavior+Index",
 }
 
 
 def load_config(repo_path: Path) -> Dict[str, Any]:
-    """Load optional config from <repo>/.semanticir/config.json."""
+    """Load optional config from <repo>/.codeir/config.json."""
     cfg = dict(DEFAULT_CONFIG)
-    cfg_path = repo_path / ".semanticir" / "config.json"
+    cfg_path = repo_path / ".codeir" / "config.json"
     if cfg_path.exists():
         with cfg_path.open("r", encoding="utf-8") as fh:
             user_cfg = json.load(fh)
@@ -50,27 +56,33 @@ def load_config(repo_path: Path) -> Dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="semanticir", description="SemanticIR — semantic compression and indexing for codebases")
+    parser = argparse.ArgumentParser(prog="codeir", description="CodeIR — semantic compression and indexing for codebases")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    # init
+    p_init = sub.add_parser("init", help="Full setup: index + bearings + rules")
+    p_init.add_argument("repo_path", type=Path)
+    p_init.add_argument("--level", default=None, help="Compression level (default: Behavior+Index)")
 
     # index
     p_index = sub.add_parser("index", help="Index a repository")
     p_index.add_argument("repo_path", type=Path)
-    p_index.add_argument("--level", default=None, help="Compression level: L0, L1, L2, L3, or all")
+    p_index.add_argument("--level", default=None, help="Compression level: Source, Behavior, Index, Behavior+Index, or all (default: Behavior+Index)")
     p_index.add_argument("--mode", default=None, help="Legacy mode alias: a, b, or hybrid")
     p_index.add_argument("--compact", action="store_true", help="Rebuild abbreviation maps from scratch")
 
     # search
     p_search = sub.add_parser("search", help="Search entities")
-    p_search.add_argument("query")
+    p_search.add_argument("query", nargs="+", help="Search terms (space-separated, OR logic with term-count ranking)")
     p_search.add_argument("--repo-path", type=Path, default=Path("."))
     p_search.add_argument("--limit", type=int, default=50)
+    p_search.add_argument("--category", default=None, help="Filter by module category (e.g., core_logic, tests)")
 
     # show
     p_show = sub.add_parser("show", help="Show entity IR")
     p_show.add_argument("entity_id")
     p_show.add_argument("--repo-path", type=Path, default=Path("."))
-    p_show.add_argument("--level", default="L1", help="Compression level to show")
+    p_show.add_argument("--level", default="Behavior", help="Compression level to show")
 
     # expand
     p_expand = sub.add_parser("expand", help="Show raw source for an entity")
@@ -92,13 +104,51 @@ def build_parser() -> argparse.ArgumentParser:
 
     # bearings
     p_bearings = sub.add_parser("bearings", help="Generate bearings.md context file")
-    p_bearings.add_argument("--repo-path", type=Path, default=Path("."))
+    p_bearings.add_argument("repo_path", nargs="?", type=Path, default=None, help="Repository path (default: .)")
+    p_bearings.add_argument("--repo-path", type=Path, default=Path("."), dest="repo_path_flag")
     p_bearings.add_argument("--output", type=Path, default=None, help="Output path (default: bearings.md)")
+
+    # callers
+    p_callers = sub.add_parser("callers", help="Show what calls a given entity")
+    p_callers.add_argument("entity_id")
+    p_callers.add_argument("--repo-path", type=Path, default=Path("."))
+    p_callers.add_argument("--resolution", default=None,
+                           help="Filter by resolution type: import, local, fuzzy")
+
+    # impact
+    p_impact = sub.add_parser("impact", help="Reverse dependency analysis — what breaks if this changes")
+    p_impact.add_argument("entity_id")
+    p_impact.add_argument("--repo-path", type=Path, default=Path("."))
+    p_impact.add_argument("--depth", type=int, default=2, help="Max traversal depth (default: 2)")
+    p_impact.add_argument("--level", default="Behavior", help="IR level to show (default: Behavior)")
+
+    # scope
+    p_scope = sub.add_parser("scope", help="Minimal context needed to safely modify an entity")
+    p_scope.add_argument("entity_id")
+    p_scope.add_argument("--repo-path", type=Path, default=Path("."))
+    p_scope.add_argument("--level", default="Behavior", help="IR level to show (default: Behavior)")
+
+    # grep
+    p_grep = sub.add_parser("grep", help="Grep source files with IR context")
+    p_grep.add_argument("pattern", help="Regex pattern to search for")
+    p_grep.add_argument("--repo-path", type=Path, default=Path("."))
+    p_grep.add_argument("--level", default="Behavior", help="IR level to attach (default: Behavior)")
+    p_grep.add_argument("--limit", type=int, default=50, help="Max result groups (default: 50)")
+    p_grep.add_argument("-i", "--ignore-case", action="store_true", help="Case-insensitive matching")
+    p_grep.add_argument("-C", "--context", type=int, default=0, help="Show N surrounding lines per match (like grep -C)")
+    p_grep.add_argument("--path", default=None, help="Scope to directory or glob (e.g., orm/ or 'engine/*.py')")
+    p_grep.add_argument("-v", "--verbose", action="store_true", help="Include IR context for each entity match")
+
+    # rules
+    p_rules = sub.add_parser("rules", help="Generate .claude/rules/CodeIR.md agent instructions")
+    p_rules.add_argument("repo_path", nargs="?", type=Path, default=None, help="Repository path (default: .)")
+    p_rules.add_argument("--repo-path", type=Path, default=Path("."), dest="repo_path_flag")
+    p_rules.add_argument("--output", type=Path, default=None, help="Output path (default: .claude/rules/CodeIR.md)")
 
     # eval
     p_eval = sub.add_parser("eval", help="Evaluate compression levels")
     p_eval.add_argument("repo_path", type=Path)
-    p_eval.add_argument("--levels", nargs="+", default=["L1", "L2", "L3"])
+    p_eval.add_argument("--levels", nargs="+", default=["Behavior", "Index"])
     p_eval.add_argument("--modes", default=None, help="Legacy modes: comma-separated a,b,hybrid")
     p_eval.add_argument("--output", type=Path, default=None)
 
@@ -108,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_floor_gen = floor_sub.add_parser("generate", help="Generate test pack")
     p_floor_gen.add_argument("repo_path", type=Path)
-    p_floor_gen.add_argument("--level", default="L1", help="Compression level for test pack")
+    p_floor_gen.add_argument("--level", default="Behavior", help="Compression level for test pack")
     p_floor_gen.add_argument("--count", type=int, default=15, help="Number of test entities")
     p_floor_gen.add_argument("--seed", type=int, default=42, help="Random seed for entity selection")
     p_floor_gen.add_argument("--output", type=Path, default=None, help="Output JSON path")
@@ -123,6 +173,81 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Full setup: index a repository, then generate bearings and rules."""
+    repo_path = args.repo_path.resolve()
+    cfg = load_config(repo_path)
+    if args.level:
+        cfg["compression_level"] = args.level
+
+    # 1. Index
+    print(f"Indexing {repo_path} ...")
+    result = index_repo(repo_path, cfg)
+    if result.get("status") == "no_changes":
+        print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+    else:
+        print(f"  {result.get('total_entities', 0)} entities, "
+              f"{result.get('files_changed', 0)} files changed")
+
+    # 2. Bearings
+    db_path = repo_path / ".codeir" / "entities.db"
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT file_path, category, entity_count, deps_internal "
+            "FROM modules ORDER BY category, file_path"
+        ).fetchall()
+        total = int(conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0])
+    except sqlite3.OperationalError:
+        print("Warning: could not generate bearings (no module data).")
+        conn.close()
+        return
+    conn.close()
+
+    modules = [
+        {"file_path": r["file_path"], "category": r["category"],
+         "entity_count": r["entity_count"], "deps_internal": r["deps_internal"]}
+        for r in rows
+    ]
+    module_ids = _compute_module_ids(modules)
+
+    from ir.classifier import generate_context_file, generate_summary, generate_category_file
+
+    claude_dir = repo_path / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_content = generate_summary(repo_path.name, modules, total)
+    (claude_dir / "bearings-summary.md").write_text(summary_content, encoding="utf-8")
+
+    bearings_content = generate_context_file(repo_path.name, modules, total, module_ids)
+    (claude_dir / "bearings.md").write_text(bearings_content, encoding="utf-8")
+
+    bearings_dir = claude_dir / "bearings"
+    bearings_dir.mkdir(parents=True, exist_ok=True)
+    by_cat: Dict[str, list] = {}
+    for mod in modules:
+        by_cat.setdefault(mod["category"], []).append(mod)
+    for category, cat_mods in by_cat.items():
+        cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids)
+        (bearings_dir / f"{category}.md").write_text(cat_content, encoding="utf-8")
+
+    print(f"  Bearings: {len(modules)} modules, {total} entities")
+
+    # 3. Rules
+    from ir.rules_generator import generate_rules_file
+    try:
+        rules_content = generate_rules_file(repo_path)
+        rules_path = repo_path / ".claude" / "rules" / "CodeIR.md"
+        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        rules_path.write_text(rules_content, encoding="utf-8")
+        print(f"  Rules:    {rules_path}")
+    except ValueError as exc:
+        print(f"Warning: could not generate rules: {exc}")
+
+    print("Done.")
+
 
 def cmd_index(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
@@ -148,15 +273,20 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"  Entities indexed: {result.get('entities_indexed', 0)} (total: {result.get('total_entities', 0)})")
     print(f"  IR rows: {result.get('ir_rows', 0)} (total: {result.get('total_ir_rows', 0)})")
     print(f"  Abbreviations: {result.get('abbreviations', 0)}")
-    print(f"  Level: {result.get('compression_level', 'L1')}")
+    print(f"  Caller links: {result.get('caller_relationships', 0)}")
+    print(f"  Level: {result.get('compression_level', 'Behavior')}")
     print(f"  Store: {result.get('store_dir', '')}")
 
 
 def cmd_search(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    results = search_entities(query=args.query, repo_path=repo_path, limit=args.limit)
+    results = search_entities(
+        query=" ".join(args.query), repo_path=repo_path, limit=args.limit,
+        category=getattr(args, "category", None),
+    )
     if not results:
-        print("No entities found.")
+        query_str = " ".join(args.query)
+        print(f"No entities found. Try: codeir grep \"{query_str}\" to search file contents.")
         return
     for r in results:
         print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}]")
@@ -167,7 +297,7 @@ def cmd_show(args: argparse.Namespace) -> None:
     result = get_entity_with_ir(repo_path=repo_path, entity_id=args.entity_id, mode=args.level)
     if not result:
         print(f"Entity not found: {args.entity_id} (level={args.level})")
-        print("Run `semanticir index <repo_path>` first.")
+        print("Run `codeir index <repo_path>` first.")
         return
     print(f"Entity: {result['qualified_name']}  [{result['kind']}]")
     print(f"File:   {result['file_path']}:{result['line']}")
@@ -198,23 +328,22 @@ def cmd_compare(args: argparse.Namespace) -> None:
     levels = get_entity_all_levels(repo_path=repo_path, entity_id=args.entity_id)
     if not levels:
         print(f"Entity not found: {args.entity_id}")
-        print("Run `semanticir index <repo> --level all` to generate all compression levels.")
+        print("Run `codeir index <repo> --level all` to generate all compression levels.")
         return
 
     first = levels[0]
     print(f"## {first['entity_id']} ({first['qualified_name']})")
     print(f"File: {first['file_path']}:{first['start_line']}-{first['end_line']}  [{first['kind']}]")
 
-    # Show source
-    loc = get_entity_location(repo_path=repo_path, entity_id=args.entity_id)
-    if loc:
-        source = extract_code_slice(
-            repo_path=repo_path,
-            file_path=str(loc["file_path"]),
-            start_line=int(loc["start_line"]),
-            end_line=int(loc["end_line"]),
-        )
-        src_tokens = levels[0].get("source_token_count", "?")
+    # Show source (location already available from first level row)
+    source = extract_code_slice(
+        repo_path=repo_path,
+        file_path=str(first["file_path"]),
+        start_line=int(first["start_line"]),
+        end_line=int(first["end_line"]),
+    )
+    if source:
+        src_tokens = first.get("source_token_count", "?")
         print(f"\n### Source ({src_tokens} tokens):")
         print(source)
 
@@ -225,6 +354,216 @@ def cmd_compare(args: argparse.Namespace) -> None:
             ratio = f"{ratio:.2f}"
         print(f"\n### {row['mode']} ({ir_tokens} tokens, ratio {ratio}):")
         print(row["ir_text"])
+
+
+def cmd_callers(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        sql = """
+            SELECT caller_id, caller_name, caller_file, resolution
+            FROM callers
+            WHERE entity_id = ?
+        """
+        params: list = [args.entity_id]
+
+        if args.resolution:
+            sql += " AND resolution = ?"
+            params.append(args.resolution)
+
+        sql += " ORDER BY resolution, caller_name"
+
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        print(f"No callers found for: {args.entity_id}")
+        return
+
+    for row in rows:
+        marker = "~" if row["resolution"] == "fuzzy" else " "
+        print(f" {marker}{row['caller_id']:20s}  {row['caller_name']:40s}  {row['caller_file']}  [{row['resolution']}]")
+
+
+def cmd_impact(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    result = compute_impact(conn, args.entity_id, depth=args.depth, level=args.level)
+    conn.close()
+
+    root = result["root"]
+    if not root:
+        print(f"Entity not found: {args.entity_id}")
+        return
+
+    print(f"Impact analysis for: {root['qualified_name']}  [{root['kind']}]")
+    print(f"File: {root['file_path']}:{root['start_line']}")
+    if root["ir_text"]:
+        print(f"IR:   {root['ir_text']}")
+    print()
+
+    impact_by_depth = result["impact_by_depth"]
+    total_affected = sum(len(items) for items in impact_by_depth.values())
+    if total_affected == 0:
+        print("No downstream dependents found.")
+        return
+
+    print(f"Affected: {total_affected} entities across {len(result['affected_files'])} files")
+    if result["affected_categories"]:
+        print(f"Categories: {', '.join(sorted(result['affected_categories']))}")
+    print()
+
+    for depth in sorted(impact_by_depth.keys()):
+        items = impact_by_depth[depth]
+        label = "direct" if depth == 1 else f"depth {depth}"
+        print(f"--- {label} ({len(items)} entities) ---")
+        for item in sorted(items, key=lambda x: (x["file_path"], x["qualified_name"])):
+            marker = "~" if item["resolution"] == "fuzzy" else " "
+            loc = f"{item['file_path']}:{item['start_line']}" if item["start_line"] else item["file_path"]
+            print(f" {marker}{item['entity_id']:20s}  {item['qualified_name']:40s}  {loc}  [{item['kind']}]")
+            if item["ir_text"]:
+                print(f"  {'':20s}  IR: {item['ir_text']}")
+            if depth > 1:
+                print(f"  {'':20s}  via: {item['via']}")
+        print()
+
+
+def cmd_scope(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        result = compute_scope(conn, args.entity_id, level=args.level)
+    finally:
+        conn.close()
+
+    root = result["root"]
+    if not root:
+        print(f"Entity not found: {args.entity_id}")
+        return
+
+    print(f"Scope for: {root['qualified_name']}  [{root['kind']}]")
+    print(f"File: {root['file_path']}:{root['start_line']}")
+    if root["ir_text"]:
+        print(f"IR:   {root['ir_text']}")
+    print()
+
+    def _print_group(label: str, items: list) -> None:
+        if not items:
+            return
+        print(f"--- {label} ({len(items)}) ---")
+        for item in items:
+            marker = "~" if item.get("resolution") == "fuzzy" else " "
+            loc = f"{item['file_path']}:{item['start_line']}"
+            print(f" {marker}{item['entity_id']:20s}  {item['qualified_name']:40s}  {loc}  [{item['kind']}]")
+            if item["ir_text"]:
+                print(f"  {'':20s}  IR: {item['ir_text']}")
+        print()
+
+    _print_group("callers (what calls this)", result["callers"])
+    _print_group("callees (what this calls)", result["callees"])
+    _print_group("siblings (same class)", result["siblings"])
+
+    total = len(result["callers"]) + len(result["callees"]) + len(result["siblings"])
+    if total == 0:
+        print("No related entities found.")
+    else:
+        print(f"Total: {total} entities in scope")
+
+
+def _print_matches(matches: list) -> None:
+    """Print match lines with optional context, deduplicating overlapping context."""
+    pad = f"  {'':20s}    "
+    shown_lines: set = set()
+    for i, m in enumerate(matches):
+        # Context before
+        for ctx in m.get("context_before", []):
+            if ctx["line"] not in shown_lines:
+                shown_lines.add(ctx["line"])
+                print(f"{pad}{ctx['line']:>5d}  {ctx['text']}")
+        # Match line (marked with arrow)
+        marker = " ←" if m.get("context_before") or m.get("context_after") else ""
+        shown_lines.add(m["line"])
+        print(f"{pad}{m['line']:>5d}: {m['text']}{marker}")
+        # Context after
+        for ctx in m.get("context_after", []):
+            if ctx["line"] not in shown_lines:
+                shown_lines.add(ctx["line"])
+                print(f"{pad}{ctx['line']:>5d}  {ctx['text']}")
+        # Separator between non-adjacent match groups
+        if i < len(matches) - 1:
+            next_m = matches[i + 1]
+            next_start = next_m.get("context_before", [])
+            next_first_line = next_start[0]["line"] if next_start else next_m["line"]
+            last_shown = m.get("context_after", [])
+            last_line = last_shown[-1]["line"] if last_shown else m["line"]
+            if next_first_line > last_line + 1:
+                print(f"{pad}  ...")
+
+
+def cmd_grep(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    try:
+        results = grep_entities(
+            pattern=args.pattern,
+            repo_path=repo_path,
+            level=args.level,
+            limit=args.limit,
+            ignore_case=args.ignore_case,
+            context=args.context,
+            path_filter=args.path,
+        )
+    except FileNotFoundError:
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+    except ValueError as exc:
+        print(str(exc))
+        return
+
+    if not results:
+        print("No matches found.")
+        return
+
+    total_matches = sum(len(r["matches"]) for r in results)
+    entity_groups = sum(1 for r in results if r["type"] == "entity")
+    file_groups = sum(1 for r in results if r["type"] == "file")
+    print(f"{total_matches} matches across {entity_groups} entities and {file_groups} unmatched regions\n")
+
+    verbose = getattr(args, "verbose", False)
+    for group in results:
+        match_count = len(group["matches"])
+        if group["type"] == "entity":
+            print(f"  {group['entity_id']:20s}  {group['qualified_name']}  [{group['kind']}]")
+            print(f"  {'':20s}  {group['file_path']}:{group['start_line']}-{group['end_line']}  ({match_count} matches)")
+            if verbose:
+                ir_text = group.get("ir_text") or "(no IR at this level)"
+                print(f"  {'':20s}  IR: {ir_text}")
+            _print_matches(group["matches"])
+            print()
+        else:
+            print(f"  {'(no entity)':20s}  {group['file_path']}  ({match_count} matches)")
+            _print_matches(group["matches"])
+            print()
 
 
 def cmd_stats(args: argparse.Namespace) -> None:
@@ -274,43 +613,42 @@ def cmd_stats(args: argparse.Namespace) -> None:
 
 def cmd_module_map(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".semanticir" / "entities.db"
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
-        print("No index found. Run `semanticir index <repo_path>` first.")
+        print("No index found. Run `codeir index <repo_path>` first.")
         return
 
     conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
 
-    # Get module classifications — try with deps_internal first, fall back gracefully
     try:
-        modules = conn.execute(
-            "SELECT m.file_path, m.category, m.entity_count, m.deps_internal "
-            "FROM modules m ORDER BY m.category, m.file_path"
-        ).fetchall()
-        has_deps = True
-    except sqlite3.OperationalError:
-        try:
-            modules = conn.execute(
-                "SELECT m.file_path, m.category, m.entity_count "
-                "FROM modules m ORDER BY m.category, m.file_path"
-            ).fetchall()
-            has_deps = False
-        except sqlite3.OperationalError:
+        cols = column_names(conn, "modules")
+        if not cols:
             print("No module classifications found. Re-index to generate module map.")
-            conn.close()
             return
+
+        has_deps = "deps_internal" in cols
+        select = "file_path, category, entity_count"
+        if has_deps:
+            select += ", deps_internal"
+
+        modules = conn.execute(
+            f"SELECT {select} FROM modules ORDER BY category, file_path"
+        ).fetchall()
+    finally:
+        conn.close()
 
     if not modules:
         print("No modules indexed.")
-        conn.close()
         return
 
     # Group by category
     categories: Dict[str, list] = {}
     for row in modules:
-        file_path, category, entity_count = row[0], row[1], row[2]
-        deps = row[3] if has_deps and len(row) > 3 else ""
-        categories.setdefault(category, []).append((file_path, entity_count, deps))
+        deps = row["deps_internal"] if has_deps else ""
+        categories.setdefault(row["category"], []).append(
+            (row["file_path"], row["entity_count"], deps)
+        )
 
     repo_name = repo_path.name
     print(f"# Module Map: {repo_name}\n")
@@ -322,8 +660,6 @@ def cmd_module_map(args: argparse.Namespace) -> None:
             deps_str = f"  deps: {deps}" if deps else ""
             print(f"  {file_path} — {entity_count} entities{deps_str}")
         print()
-
-    conn.close()
 
 
 def _compute_module_ids(modules: list) -> Dict[str, str]:
@@ -344,15 +680,15 @@ def _compute_module_ids(modules: list) -> Dict[str, str]:
 
 
 def cmd_bearings(args: argparse.Namespace) -> None:
-    repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".semanticir" / "entities.db"
+    repo_path = (args.repo_path or args.repo_path_flag).resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
-        print("No index found. Run `semanticir index <repo_path>` first.")
+        print("No index found. Run `codeir index <repo_path>` first.")
         return
 
     conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
 
-    # Fetch modules with deps
     try:
         rows = conn.execute(
             "SELECT file_path, category, entity_count, deps_internal "
@@ -367,29 +703,77 @@ def cmd_bearings(args: argparse.Namespace) -> None:
         total = int(conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0])
     except sqlite3.OperationalError:
         total = 0
-    conn.close()
+    finally:
+        conn.close()
 
     modules = [
-        {"file_path": r[0], "category": r[1],
-         "entity_count": r[2], "deps_internal": r[3]}
-        for r in rows
+        {"file_path": row["file_path"], "category": row["category"],
+         "entity_count": row["entity_count"], "deps_internal": row["deps_internal"]}
+        for row in rows
     ]
 
     # Assign module IDs (computed, not persisted)
     module_ids = _compute_module_ids(modules)
 
-    from ir.classifier import generate_context_file
-    content = generate_context_file(repo_path.name, modules, total, module_ids)
+    from ir.classifier import generate_context_file, generate_summary, generate_category_file
 
-    output = args.output or Path("bearings.md")
+    claude_dir = args.output.parent if args.output else (repo_path / ".claude")
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    # Tier 1: bearings-summary.md
+    summary_content = generate_summary(repo_path.name, modules, total)
+    summary_path = claude_dir / "bearings-summary.md"
+    summary_path.write_text(summary_content, encoding="utf-8")
+
+    # Tier 2: bearings.md (collapsed working map)
+    bearings_content = generate_context_file(repo_path.name, modules, total, module_ids)
+    bearings_path = args.output or (claude_dir / "bearings.md")
+    bearings_path.write_text(bearings_content, encoding="utf-8")
+
+    # Tier 3: bearings/{category}.md (full uncollapsed per category)
+    bearings_dir = claude_dir / "bearings"
+    bearings_dir.mkdir(parents=True, exist_ok=True)
+
+    by_cat: Dict[str, list] = {}
+    for mod in modules:
+        by_cat.setdefault(mod["category"], []).append(mod)
+
+    for category, cat_mods in by_cat.items():
+        cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids)
+        cat_path = bearings_dir / f"{category}.md"
+        cat_path.write_text(cat_content, encoding="utf-8")
+
+    print(f"Generated bearings ({len(modules)} modules, {total} entities):")
+    print(f"  Summary:    {summary_path}")
+    print(f"  Working map:{bearings_path}")
+    print(f"  Categories: {bearings_dir}/ ({len(by_cat)} files)")
+
+
+def cmd_rules(args: argparse.Namespace) -> None:
+    repo_path = (args.repo_path or args.repo_path_flag).resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    from ir.rules_generator import generate_rules_file
+
+    try:
+        content = generate_rules_file(repo_path)
+    except ValueError as exc:
+        print(str(exc))
+        return
+
+    output = args.output or (repo_path / ".claude" / "rules" / "CodeIR.md")
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(content, encoding="utf-8")
-    print(f"Generated {output} ({len(modules)} modules, {total} entities)")
+    print(f"Generated rules: {output}")
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
     cfg = load_config(repo_path)
-    levels = [str(l).upper() for l in args.levels]
+    levels = list(args.levels)
 
     # Backward-compatible mode aliases (a,b,hybrid) -> levels.
     if args.modes:
@@ -437,7 +821,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
 
 def cmd_floor_test(args: argparse.Namespace) -> None:
     if args.floor_action == "generate":
-        from index.floor_test import generate_test_pack
+        from tests.eval.floor_test import generate_test_pack
 
         repo_path = args.repo_path.resolve()
         pack = generate_test_pack(
@@ -452,7 +836,7 @@ def cmd_floor_test(args: argparse.Namespace) -> None:
         print(f"Output: {output}")
 
     elif args.floor_action == "score":
-        from index.eval import floor_report, render_floor_matrix_markdown
+        from tests.eval.eval import floor_report, render_floor_matrix_markdown
 
         report = floor_report(args.results_path)
         md = render_floor_matrix_markdown(report)
@@ -472,14 +856,20 @@ def main() -> None:
     args = parser.parse_args()
 
     handlers = {
+        "init": cmd_init,
         "index": cmd_index,
         "search": cmd_search,
         "show": cmd_show,
         "expand": cmd_expand,
         "compare": cmd_compare,
+        "callers": cmd_callers,
+        "impact": cmd_impact,
+        "scope": cmd_scope,
+        "grep": cmd_grep,
         "stats": cmd_stats,
         "module-map": cmd_module_map,
         "bearings": cmd_bearings,
+        "rules": cmd_rules,
         "eval": cmd_eval,
         "floor-test": cmd_floor_test,
     }

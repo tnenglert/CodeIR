@@ -1,6 +1,6 @@
 """Run comprehensibility floor tests using LLM evaluation.
 
-Multi-model test harness for evaluating SemanticIR compression levels.
+Multi-model test harness for evaluating CodeIR compression levels.
 Tests how well different LLMs understand compressed code representations.
 
 Supported providers:

@@ -8,7 +8,7 @@ Temporal tracking is not implemented in the current runtime.
 - No temporal tables are created in the active schema.
 - CLI does not expose temporal commands yet.
 
-This means SemanticIR currently behaves as a snapshot index with deterministic incremental updates, not history-aware analytics.
+This means CodeIR currently behaves as a snapshot index with deterministic incremental updates, not history-aware analytics.
 
 ## Why This Matters for Claw Compatibility
 

@@ -48,7 +48,7 @@ class TestL1ExceptionSignals(unittest.TestCase):
             rows = build_ir_rows(
                 entities=entities,
                 abbreviations=abbrev_maps,
-                compression_level="L1",
+                compression_level="Behavior",
                 repo_path=repo,
                 module_categories={"sample.py": "exceptions"},
                 module_domains={"sample.py": "http"},

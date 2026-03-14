@@ -130,7 +130,9 @@ class _ClassificationVisitor(ast.NodeVisitor):
                 self.has_dataclass_decorator = True
                 self.schema_base_count += 1
 
+        self._depth += 1
         self.generic_visit(node)
+        self._depth -= 1
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.total_function_count += 1
@@ -146,7 +148,9 @@ class _ClassificationVisitor(ast.NodeVisitor):
             elif isinstance(dec, ast.Attribute):
                 if dec.attr in _ROUTE_DECORATORS:
                     self.route_decorator_count += 1
+        self._depth += 1
         self.generic_visit(node)
+        self._depth -= 1
 
     visit_AsyncFunctionDef = visit_FunctionDef
 
@@ -198,54 +202,82 @@ _DOMAIN_FILE_PATTERNS: Dict[str, str] = {
     "serializer": "parse", "encoding": "parse", "codec": "parse",
 }
 
-# Import patterns that indicate domain
-_DOMAIN_IMPORTS: Dict[str, str] = {
+# Strong import signals: specific enough that a single import determines domain.
+_DOMAIN_IMPORTS_STRONG: Dict[str, str] = {
     # HTTP
-    "requests": "http", "urllib": "http", "urllib3": "http", "aiohttp": "http",
-    "httpx": "http", "httplib": "http", "http.client": "http", "http.server": "http",
-    "http.cookies": "http", "http.cookiejar": "http",
+    "requests": "http", "urllib3": "http", "aiohttp": "http",
+    "httpx": "http", "httplib": "http",
     # Auth
     "jwt": "auth", "oauthlib": "auth", "authlib": "auth",
     # Crypto
-    "cryptography": "crypto", "hashlib": "crypto", "hmac": "crypto",
-    "ssl": "crypto", "secrets": "crypto",
+    "cryptography": "crypto", "hmac": "crypto",
     # Database
     "sqlalchemy": "db", "psycopg2": "db", "pymysql": "db", "sqlite3": "db",
     "motor": "db", "pymongo": "db", "redis": "db",
-    # File system
-    "pathlib": "fs", "shutil": "fs", "tempfile": "fs", "glob": "fs",
     # CLI
-    "argparse": "cli", "click": "cli", "typer": "cli",
+    "argparse": "cli", "typer": "cli",
     # Parsing
-    "json": "parse", "xml": "parse", "yaml": "parse", "toml": "parse",
-    "csv": "parse", "pickle": "parse",
+    "yaml": "parse", "toml": "parse", "csv": "parse", "pickle": "parse",
     # Async
-    "asyncio": "async", "threading": "async", "multiprocessing": "async",
-    "concurrent": "async", "queue": "async",
+    "multiprocessing": "async", "concurrent": "async", "queue": "async",
     # Low-level net
     "socket": "net", "select": "net", "selectors": "net",
 }
 
+# Weak import signals: too commonly used as utilities to determine domain alone.
+# Require a cumulative score >= 2 before assigning domain from imports.
+_DOMAIN_IMPORTS_WEAK: Dict[str, str] = {
+    # HTTP — urllib/http.* used for URL parsing in non-HTTP files
+    "urllib": "http", "http": "http",
+    # Auth
+    "passlib": "auth",
+    # Crypto — hashlib/secrets/ssl used incidentally in many files
+    "hashlib": "crypto", "secrets": "crypto", "ssl": "crypto",
+    # Database (sqlite3 moved to strong — importing it always means db work)
+    # File system — pathlib/tempfile/glob used as utilities everywhere
+    "pathlib": "fs", "shutil": "fs", "tempfile": "fs", "glob": "fs",
+    # CLI — click used as framework decorator in non-CLI files
+    "click": "cli",
+    # Parsing — json imported in almost every file
+    "json": "parse", "xml": "parse",
+    # Async — asyncio/threading used as utilities
+    "asyncio": "async", "threading": "async",
+}
+
+# Combined map for backwards-compatible lookups
+_DOMAIN_IMPORTS: Dict[str, str] = {**_DOMAIN_IMPORTS_STRONG, **_DOMAIN_IMPORTS_WEAK}
+
+_STRONG_SIGNAL_SCORE = 2  # strong import alone is sufficient
+_WEAK_SIGNAL_SCORE = 1    # weak import needs a second signal to reach threshold
+_DOMAIN_THRESHOLD = 2
+
 
 class _DomainVisitor(ast.NodeVisitor):
-    """Collect domain signals from imports."""
+    """Collect domain signals from imports using a two-tier scoring system."""
 
     def __init__(self) -> None:
-        self.domain_signals: Dict[str, int] = {}
+        self.domain_scores: Dict[str, int] = {}
+
+    def _record(self, mod: str) -> None:
+        if mod in _DOMAIN_IMPORTS_STRONG:
+            domain = _DOMAIN_IMPORTS_STRONG[mod]
+            self.domain_scores[domain] = self.domain_scores.get(domain, 0) + _STRONG_SIGNAL_SCORE
+        elif mod in _DOMAIN_IMPORTS_WEAK:
+            domain = _DOMAIN_IMPORTS_WEAK[mod]
+            self.domain_scores[domain] = self.domain_scores.get(domain, 0) + _WEAK_SIGNAL_SCORE
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            mod = alias.name.split(".")[0]
-            if mod in _DOMAIN_IMPORTS:
-                domain = _DOMAIN_IMPORTS[mod]
-                self.domain_signals[domain] = self.domain_signals.get(domain, 0) + 1
+            self._record(alias.name.split(".")[0])
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module:
-            mod = node.module.split(".")[0]
-            if mod in _DOMAIN_IMPORTS:
-                domain = _DOMAIN_IMPORTS[mod]
-                self.domain_signals[domain] = self.domain_signals.get(domain, 0) + 1
+            self._record(node.module.split(".")[0])
+
+    @property
+    def domain_signals(self) -> Dict[str, int]:
+        """Backwards-compatible property; returns scores dict."""
+        return self.domain_scores
 
 
 def classify_domain(file_path: Path, tree: ast.Module) -> str:
@@ -264,12 +296,12 @@ def classify_domain(file_path: Path, tree: ast.Module) -> str:
         if lower in _DOMAIN_FILE_PATTERNS:
             return _DOMAIN_FILE_PATTERNS[lower]
 
-    # 3. Check imports
+    # 3. Check imports — only assign if winning domain meets threshold
     visitor = _DomainVisitor()
     visitor.visit(tree)
-    if visitor.domain_signals:
-        # Return domain with most signals
-        return max(visitor.domain_signals, key=visitor.domain_signals.get)
+    qualifying = {d: s for d, s in visitor.domain_scores.items() if s >= _DOMAIN_THRESHOLD}
+    if qualifying:
+        return max(qualifying, key=qualifying.get)
 
     return "unknown"
 
@@ -284,9 +316,16 @@ def _get_name(node: ast.AST) -> str:
     return ""
 
 
-def _classify_by_ast(tree: ast.Module) -> Optional[str]:
-    visitor = _ClassificationVisitor()
-    visitor.visit(tree)
+def _classify_by_ast(
+    tree: ast.Module, visitor: Optional[_ClassificationVisitor] = None,
+) -> tuple:
+    """Classify by AST structural signals.
+
+    Returns (category_or_None, visitor) so the visitor can be reused by the fallback.
+    """
+    if visitor is None:
+        visitor = _ClassificationVisitor()
+        visitor.visit(tree)
 
     v = visitor
 
@@ -295,34 +334,36 @@ def _classify_by_ast(tree: ast.Module) -> Optional[str]:
         n for n in tree.body
         if not isinstance(n, (ast.Import, ast.ImportFrom))
     ]
-    if len(body_without_imports) <= 1 and body_without_imports and isinstance(body_without_imports[0], ast.Expr) and isinstance(body_without_imports[0].value, (ast.Constant, ast.Str)):
-        return "docs"
+    if (len(body_without_imports) == 1
+            and isinstance(body_without_imports[0], ast.Expr)
+            and isinstance(body_without_imports[0].value, (ast.Constant, ast.Str))):
+        return "docs", v
 
     # Pure exception module
     if v.exception_class_count > 0 and v.exception_class_count == v.total_class_count and v.total_function_count == 0:
-        return "exceptions"
+        return "exceptions", v
 
     # Router-heavy file
     if v.route_decorator_count >= 2:
-        return "router"
+        return "router", v
     if v.route_decorator_count == 1 and v.total_function_count <= 3:
-        return "router"
+        return "router", v
 
     # Schema-heavy file
     if v.schema_base_count >= 2:
-        return "schema"
+        return "schema", v
     if v.schema_base_count == 1 and v.total_class_count <= 3 and v.total_function_count <= 2:
-        return "schema"
+        return "schema", v
 
     # Compat module
     if v.compat_signal_count >= 3:
-        return "compat"
+        return "compat", v
 
     # Constants-only module
     if v.top_level_assign_count >= 3 and v.total_function_count == 0 and v.total_class_count == 0:
-        return "constants"
+        return "constants", v
 
-    return None
+    return None, v
 
 
 # ---------------------------------------------------------------------------
@@ -344,14 +385,12 @@ def classify_file(file_path: Path, tree: ast.Module) -> str:
     if cat:
         return cat
 
-    # 3. AST content analysis
-    cat = _classify_by_ast(tree)
+    # 3. AST content analysis (visitor is reused in fallback to avoid double traversal)
+    cat, visitor = _classify_by_ast(tree)
     if cat:
         return cat
 
-    # 4. Fallback heuristic
-    visitor = _ClassificationVisitor()
-    visitor.visit(tree)
+    # 4. Fallback heuristic (reuses visitor from step 3)
     total_defs = visitor.total_function_count + visitor.total_class_count
     if total_defs == 0:
         return "constants" if visitor.top_level_assign_count > 0 else "docs"
@@ -405,38 +444,204 @@ def to_module_ir_line(
     return f"MD {module_id} {display_path} | cat:{category} | entities:{entity_count} | deps:{deps} | churn:{churn}"
 
 
-def generate_context_file(
-    repo_name: str, modules: List[Dict[str, object]],
-    total_entities: int, module_ids: Dict[str, str],
-) -> str:
-    """Produce bearings.md — agent orientation context for a codebase.
+# ---------------------------------------------------------------------------
+# Tiered bearings rendering
+# ---------------------------------------------------------------------------
 
-    Groups modules by category, emits compact IR lines per module,
-    and provides a structural overview suitable for dropping into an
-    agent workspace as the first file read on entry.
-    """
+# Modules with >= this many entities are individually listed in tier 2
+INDIVIDUAL_LISTING_THRESHOLD = 5
+
+# Filename must appear > this many times within a category to trigger collapse
+PATTERN_COLLAPSE_TRIGGER = 5
+
+
+def _group_by_category(
+    modules: List[Dict[str, object]],
+) -> Dict[str, List[Dict[str, object]]]:
+    """Group modules by category, sorted by file_path within each."""
     by_cat: Dict[str, List[Dict[str, object]]] = {}
     for mod in modules:
         by_cat.setdefault(mod["category"], []).append(mod)
+    for cat in by_cat:
+        by_cat[cat].sort(key=lambda m: str(m["file_path"]))
+    return by_cat
+
+
+def _collapse_patterns(
+    cat_mods: List[Dict[str, object]],
+    module_ids: Dict[str, str],
+) -> tuple:
+    """Separate modules into individually listed and pattern-collapsed groups.
+
+    Returns (individual_lines, pattern_summaries) where:
+    - individual_lines: list of IR line strings for modules >= threshold
+    - pattern_summaries: list of summary strings for collapsed filename patterns
+    """
+    individual: List[str] = []
+    small: List[Dict[str, object]] = []
+
+    for mod in cat_mods:
+        ec = int(mod.get("entity_count", 0))
+        if ec >= INDIVIDUAL_LISTING_THRESHOLD:
+            mid = module_ids.get(str(mod["file_path"]), "MD_UNKN")
+            individual.append(to_module_ir_line(
+                module_id=mid, file_path=str(mod["file_path"]),
+                category=str(mod["category"]),
+                entity_count=ec,
+                deps_internal=str(mod.get("deps_internal", "")),
+            ))
+        else:
+            small.append(mod)
+
+    # Group small modules by bare filename within this category
+    by_filename: Dict[str, List[Dict[str, object]]] = {}
+    for mod in small:
+        fp = str(mod["file_path"])
+        fname = fp.rsplit("/", 1)[-1] if "/" in fp else fp
+        by_filename.setdefault(fname, []).append(mod)
+
+    pattern_summaries: List[str] = []
+    ungrouped: List[Dict[str, object]] = []
+
+    for fname, group in sorted(by_filename.items()):
+        nonzero = [m for m in group if int(m.get("entity_count", 0)) > 0]
+        zero = [m for m in group if int(m.get("entity_count", 0)) == 0]
+
+        if len(group) > PATTERN_COLLAPSE_TRIGGER:
+            # Collapse this pattern
+            total_ents = sum(int(m.get("entity_count", 0)) for m in group)
+            nonzero_count = len(nonzero)
+            zero_count = len(zero)
+
+            # Collect module IDs for searchability
+            mids = sorted(
+                module_ids.get(str(m["file_path"]), "")
+                for m in nonzero if module_ids.get(str(m["file_path"]))
+            )
+            mid_range = ""
+            if mids:
+                if len(mids) <= 3:
+                    mid_range = f" [{', '.join(mids)}]"
+                else:
+                    mid_range = f" [{mids[0]}..{mids[-1]}]"
+
+            parts = [f"{fname} ×{len(group)}"]
+            if total_ents > 0:
+                parts.append(f"{total_ents} entities")
+            if zero_count > 0:
+                parts.append(f"{zero_count} empty")
+            summary = " | ".join(parts) + mid_range
+            pattern_summaries.append(summary)
+        else:
+            # Not enough repetitions to collapse — list individually (skip zero)
+            ungrouped.extend(nonzero)
+
+    # Render ungrouped small modules as individual lines
+    for mod in sorted(ungrouped, key=lambda m: str(m["file_path"])):
+        mid = module_ids.get(str(mod["file_path"]), "MD_UNKN")
+        individual.append(to_module_ir_line(
+            module_id=mid, file_path=str(mod["file_path"]),
+            category=str(mod["category"]),
+            entity_count=int(mod.get("entity_count", 0)),
+            deps_internal=str(mod.get("deps_internal", "")),
+        ))
+
+    return individual, pattern_summaries
+
+
+def generate_summary(
+    repo_name: str, modules: List[Dict[str, object]],
+    total_entities: int,
+) -> str:
+    """Tier 1: bearings-summary.md — table of contents (~1-2k tokens).
+
+    Repo-level stats and category listing with counts.
+    """
+    by_cat = _group_by_category(modules)
 
     lines: List[str] = []
     lines.append(f"# {repo_name}")
     lines.append("")
     lines.append(f"Files: {len(modules)} | Entities: {total_entities}")
     lines.append("")
+
+    lines.append("## Categories")
+    lines.append("")
     for category in sorted(by_cat):
-        cat_mods = sorted(by_cat[category], key=lambda m: str(m["file_path"]))
+        cat_mods = by_cat[category]
         cat_entities = sum(int(m.get("entity_count", 0)) for m in cat_mods)
+        nonzero = sum(1 for m in cat_mods if int(m.get("entity_count", 0)) > 0)
+        lines.append(f"- **{category}**: {len(cat_mods)} files, {cat_entities} entities ({nonzero} non-empty)")
+
+    lines.append("")
+    lines.append("Full module map: `.claude/bearings.md`")
+    lines.append("Per-category detail: `.claude/bearings/{category}.md`")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def generate_context_file(
+    repo_name: str, modules: List[Dict[str, object]],
+    total_entities: int, module_ids: Dict[str, str],
+) -> str:
+    """Tier 2: bearings.md — collapsed working map.
+
+    Modules with >= INDIVIDUAL_LISTING_THRESHOLD entities are listed individually.
+    Repeated filenames with low entity counts are collapsed into pattern summaries.
+    Zero-entity modules appear only in pattern counts.
+    """
+    by_cat = _group_by_category(modules)
+
+    lines: List[str] = []
+    lines.append(f"# {repo_name}")
+    lines.append("")
+    lines.append(f"Files: {len(modules)} | Entities: {total_entities}")
+    lines.append("")
+
+    for category in sorted(by_cat):
+        cat_mods = by_cat[category]
+        cat_entities = sum(int(m.get("entity_count", 0)) for m in cat_mods)
+        individual, patterns = _collapse_patterns(cat_mods, module_ids)
+
         lines.append(f"## {category} ({len(cat_mods)} files, {cat_entities} entities)")
-        lines.append("```")
-        for mod in cat_mods:
-            mid = module_ids.get(str(mod["file_path"]), "MD_UNKN")
-            lines.append(to_module_ir_line(
-                module_id=mid, file_path=str(mod["file_path"]),
-                category=str(mod["category"]),
-                entity_count=int(mod.get("entity_count", 0)),
-                deps_internal=str(mod.get("deps_internal", "")),
-            ))
-        lines.append("```")
+        if individual:
+            lines.append("```")
+            for line in individual:
+                lines.append(line)
+            lines.append("```")
+        if patterns:
+            lines.append("")
+            lines.append("Patterns:")
+            for p in patterns:
+                lines.append(f"  {p}")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+def generate_category_file(
+    repo_name: str, category: str,
+    cat_modules: List[Dict[str, object]],
+    module_ids: Dict[str, str],
+) -> str:
+    """Tier 3: bearings/{category}.md — full uncollapsed detail for one category."""
+    cat_mods = sorted(cat_modules, key=lambda m: str(m["file_path"]))
+    cat_entities = sum(int(m.get("entity_count", 0)) for m in cat_mods)
+
+    lines: List[str] = []
+    lines.append(f"# {repo_name} — {category}")
+    lines.append("")
+    lines.append(f"Files: {len(cat_mods)} | Entities: {cat_entities}")
+    lines.append("")
+    lines.append("```")
+    for mod in cat_mods:
+        mid = module_ids.get(str(mod["file_path"]), "MD_UNKN")
+        lines.append(to_module_ir_line(
+            module_id=mid, file_path=str(mod["file_path"]),
+            category=category,
+            entity_count=int(mod.get("entity_count", 0)),
+            deps_internal=str(mod.get("deps_internal", "")),
+        ))
+    lines.append("```")
+    lines.append("")
     return "\n".join(lines)

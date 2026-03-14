@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeir"
+version = "0.2.0"
+description = "Deterministic code compression and indexing for Python repositories"
+readme = "docs/Rationale.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+keywords = ["code-analysis", "ir", "indexing", "compression", "llm", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
+]
+
+[project.optional-dependencies]
+eval = [
+    "anthropic",
+    "openai",
+    "google-generativeai",
+    "numpy",
+    "sentence-transformers",
+    "scikit-learn",
+]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+codeir = "cli:main"
+
+[tool.setuptools]
+packages = ["ir", "index", "index.store", "tools"]
+py-modules = ["cli"]
+
+[tool.setuptools.package-data]
+"index.store" = ["schema.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

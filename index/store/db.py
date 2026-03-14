@@ -1,4 +1,4 @@
-"""SQLite bootstrap, connection helpers, and schema migrations for SemanticIR."""
+"""SQLite bootstrap, connection helpers, and schema migrations for CodeIR."""
 
 from __future__ import annotations
 
@@ -37,11 +37,11 @@ def init_db(conn: sqlite3.Connection, statements: list[str]) -> None:
 # Column introspection helper
 # ---------------------------------------------------------------------------
 
-def _column_names(conn: sqlite3.Connection, table_name: str) -> set[str]:
+def column_names(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+def table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
         (table_name,),
@@ -55,9 +55,9 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 def _ensure_entities_migrations(conn: sqlite3.Connection) -> None:
     """Backfill schema changes for existing entities table."""
-    if not _table_exists(conn, "entities"):
+    if not table_exists(conn, "entities"):
         return
-    cols = _column_names(conn, "entities")
+    cols = column_names(conn, "entities")
     if "qualified_name" not in cols:
         conn.execute("ALTER TABLE entities ADD COLUMN qualified_name TEXT")
     if "module_id" not in cols:
@@ -75,11 +75,11 @@ def _ensure_ir_rows_composite_pk(conn: sqlite3.Connection) -> None:
     SQLite does not support ALTER TABLE to change a PRIMARY KEY, so we use
     rename-copy-drop strategy.
     """
-    if not _table_exists(conn, "ir_rows"):
+    if not table_exists(conn, "ir_rows"):
         return
 
     # Check if ir_rows already has the 'mode' column
-    cols = _column_names(conn, "ir_rows")
+    cols = column_names(conn, "ir_rows")
     if "mode" in cols:
         return  # Already migrated
 
@@ -97,20 +97,20 @@ def _ensure_ir_rows_composite_pk(conn: sqlite3.Connection) -> None:
         "PRIMARY KEY(entity_id, mode), "
         "FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE)"
     )
-    # Copy existing rows, setting mode to 'L1' (the closest equivalent to old hybrid output)
-    old_cols = _column_names(conn, "_ir_rows_old")
+    # Copy existing rows, setting mode to 'Behavior' (the closest equivalent to old hybrid output)
+    old_cols = column_names(conn, "_ir_rows_old")
     if "source_char_count" in old_cols:
         conn.execute(
             "INSERT INTO ir_rows (entity_id, mode, ir_text, ir_json, "
             "source_char_count, ir_char_count, source_token_count, ir_token_count, compression_ratio) "
-            "SELECT entity_id, 'L1', ir_text, ir_json, "
+            "SELECT entity_id, 'Behavior', ir_text, ir_json, "
             "source_char_count, ir_char_count, source_token_count, ir_token_count, compression_ratio "
             "FROM _ir_rows_old"
         )
     else:
         conn.execute(
             "INSERT INTO ir_rows (entity_id, mode, ir_text, ir_json) "
-            "SELECT entity_id, 'L1', ir_text, ir_json FROM _ir_rows_old"
+            "SELECT entity_id, 'Behavior', ir_text, ir_json FROM _ir_rows_old"
         )
     conn.execute("DROP TABLE _ir_rows_old")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ir_rows_mode ON ir_rows(mode)")
@@ -130,9 +130,9 @@ def _ensure_modules_table(conn: sqlite3.Connection) -> None:
 
 def _ensure_modules_deps_column(conn: sqlite3.Connection) -> None:
     """Add deps_internal column to modules table if missing."""
-    if not _table_exists(conn, "modules"):
+    if not table_exists(conn, "modules"):
         return
-    cols = _column_names(conn, "modules")
+    cols = column_names(conn, "modules")
     if "deps_internal" not in cols:
         conn.execute("ALTER TABLE modules ADD COLUMN deps_internal TEXT NOT NULL DEFAULT ''")
         conn.commit()
@@ -152,15 +152,42 @@ def _ensure_index_meta_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_calls_json_column(conn: sqlite3.Connection) -> None:
+    """Add calls_json column to entities table if missing."""
+    if not table_exists(conn, "entities"):
+        return
+    cols = column_names(conn, "entities")
+    if "calls_json" not in cols:
+        conn.execute("ALTER TABLE entities ADD COLUMN calls_json TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+
+def _ensure_callers_table(conn: sqlite3.Connection) -> None:
+    """Create the callers table for reverse call lookup."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS callers (
+            entity_id TEXT NOT NULL,
+            caller_id TEXT NOT NULL,
+            caller_name TEXT NOT NULL,
+            caller_file TEXT NOT NULL,
+            resolution TEXT NOT NULL,
+            PRIMARY KEY (entity_id, caller_id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_callers_entity ON callers(entity_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_callers_caller ON callers(caller_id)")
+    conn.commit()
+
+
 # ---------------------------------------------------------------------------
 # Mapping DB migrations
 # ---------------------------------------------------------------------------
 
 def _ensure_abbreviations_version(conn: sqlite3.Connection) -> None:
     """Add version column to abbreviations table if missing."""
-    if not _table_exists(conn, "abbreviations"):
+    if not table_exists(conn, "abbreviations"):
         return
-    cols = _column_names(conn, "abbreviations")
+    cols = column_names(conn, "abbreviations")
     if "version" not in cols:
         conn.execute("ALTER TABLE abbreviations ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
         conn.commit()
@@ -176,8 +203,8 @@ def _ensure_abbrev_meta_table(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 
 def ensure_store(repo_path: Path, schema_path: Path) -> Dict[str, Path]:
-    """Create .semanticir store and initialize entities/mapping DB schemas."""
-    store_dir = repo_path / ".semanticir"
+    """Create .codeir store and initialize entities/mapping DB schemas."""
+    store_dir = repo_path / ".codeir"
     store_dir.mkdir(parents=True, exist_ok=True)
 
     entities_db = store_dir / "entities.db"
@@ -193,6 +220,8 @@ def ensure_store(repo_path: Path, schema_path: Path) -> Dict[str, Path]:
     _ensure_modules_deps_column(entities_conn)
     _ensure_file_metadata_table(entities_conn)
     _ensure_index_meta_table(entities_conn)
+    _ensure_calls_json_column(entities_conn)
+    _ensure_callers_table(entities_conn)
     entities_conn.close()
 
     mapping_conn = connect(mapping_db)

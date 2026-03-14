@@ -1,3 +1,32 @@
+Metadata-Version: 2.4
+Name: codeir
+Version: 0.2.0
+Summary: Deterministic code compression and indexing for Python repositories
+License: MIT
+Keywords: code-analysis,ir,indexing,compression,llm,agents
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Code Generators
+Classifier: Topic :: Software Development :: Compilers
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Provides-Extra: eval
+Requires-Dist: anthropic; extra == "eval"
+Requires-Dist: openai; extra == "eval"
+Requires-Dist: google-generativeai; extra == "eval"
+Requires-Dist: numpy; extra == "eval"
+Requires-Dist: sentence-transformers; extra == "eval"
+Requires-Dist: scikit-learn; extra == "eval"
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+
 # Why LLMs Struggle With Raw Codebases
 
 LLMs work poorly on real code **not because the models are weak**, but because code is optimized for human readability, not transformer efficiency.

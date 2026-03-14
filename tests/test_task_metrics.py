@@ -16,7 +16,7 @@ class TestTaskMetrics(unittest.TestCase):
     def test_false_confidence_curve_present_even_with_sparse_data(self) -> None:
         payload = {
             "condition_results": {
-                "semanticir_flow": [
+                "codeir_flow": [
                     {
                         "task_id": "T1",
                         "top1_hit": 0,
@@ -56,7 +56,7 @@ class TestTaskMetrics(unittest.TestCase):
             p.write_text(json.dumps(payload), encoding="utf-8")
             metrics = compute_task_metrics(p)
 
-        sem = metrics["conditions"]["semanticir_flow"]
+        sem = metrics["conditions"]["codeir_flow"]
         self.assertIn("3", sem["false_confidence_curve"])
         self.assertIn("4", sem["false_confidence_curve"])
         self.assertIn("5", sem["false_confidence_curve"])
@@ -85,7 +85,7 @@ class TestTaskMetrics(unittest.TestCase):
     def test_retrieval_recall_metrics_present_and_computed(self) -> None:
         payload = {
             "condition_results": {
-                "semanticir_flow": [
+                "codeir_flow": [
                     {
                         "task_id": "T1",
                         "top1_hit": 0,
@@ -152,7 +152,7 @@ class TestTaskMetrics(unittest.TestCase):
             p.write_text(json.dumps(payload), encoding="utf-8")
             metrics = compute_task_metrics(p)
 
-        sem = metrics["conditions"]["semanticir_flow"]
+        sem = metrics["conditions"]["codeir_flow"]
         self.assertAlmostEqual(sem["retrieval_recall_any_rate"], 1.0 / 3.0)
         self.assertAlmostEqual(sem["retrieval_recall_mean"], 1.0 / 6.0)
         self.assertEqual(sem["ground_truth_missing_from_index_tasks"], 1)

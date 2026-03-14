@@ -21,12 +21,12 @@ class TestIRContractSync(unittest.TestCase):
         self.assertEqual(self.contract.get("contract_version"), "0.2.0-as-built")
         self.assertIn("entity_prefixes", self.contract)
         self.assertIn("levels", self.contract)
-        self.assertIn("L1", self.contract["levels"])
-        self.assertIn("L3", self.contract["levels"])
+        self.assertIn("Behavior", self.contract["levels"])
+        self.assertIn("Index", self.contract["levels"])
 
     def test_canonical_preamble_files_exist(self) -> None:
-        l1_rel = self.contract["canonical_preambles"]["L1"]
-        l3_rel = self.contract["canonical_preambles"]["L3"]
+        l1_rel = self.contract["canonical_preambles"]["Behavior"]
+        l3_rel = self.contract["canonical_preambles"]["Index"]
         l1_path = self.repo_root / l1_rel
         l3_path = self.repo_root / l3_rel
         self.assertTrue(l1_path.exists())
@@ -38,7 +38,7 @@ class TestIRContractSync(unittest.TestCase):
         self.assertIn("AFN=async function", l1_text)
         self.assertIn("TYPE ENTITY_ID [#DOMAIN] #CATEGORY", l3_text)
 
-    def test_emitted_l1_matches_contract_fields_and_flags(self) -> None:
+    def test_emitted_behavior_matches_contract_fields_and_flags(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
             src = repo / "sample.py"
@@ -80,7 +80,7 @@ class TestIRContractSync(unittest.TestCase):
             rows_l1 = build_ir_rows(
                 entities=entities,
                 abbreviations=abbrev_maps,
-                compression_level="L1",
+                compression_level="Behavior",
                 repo_path=repo,
                 module_categories={"sample.py": "exceptions"},
                 module_domains={"sample.py": "http"},
@@ -88,7 +88,7 @@ class TestIRContractSync(unittest.TestCase):
             )
 
             allowed_prefixes = set(self.contract["entity_prefixes"].keys())
-            allowed_flags = set(self.contract["levels"]["L1"]["flags"].keys())
+            allowed_flags = set(self.contract["levels"]["Behavior"]["flags"].keys())
             for row in rows_l1:
                 token = str(row["ir_text"])
                 pieces = token.split(" ")
@@ -103,7 +103,7 @@ class TestIRContractSync(unittest.TestCase):
                     for f in flags:
                         self.assertIn(f, allowed_flags)
 
-    def test_emitted_l3_matches_contract_shape(self) -> None:
+    def test_emitted_index_matches_contract_shape(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
             src = repo / "sample.py"
@@ -129,7 +129,7 @@ class TestIRContractSync(unittest.TestCase):
             rows_l3 = build_ir_rows(
                 entities=entities,
                 abbreviations=abbrev_maps,
-                compression_level="L3",
+                compression_level="Index",
                 repo_path=repo,
                 module_categories={"sample.py": "core_logic"},
                 module_domains={"sample.py": "http"},

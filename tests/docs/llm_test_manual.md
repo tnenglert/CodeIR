@@ -1,4 +1,4 @@
-# SemanticIR LLM Benchmark Manual
+# CodeIR LLM Benchmark Manual
 
 > [!WARNING]
 > This manual is legacy and may reference commands not exposed by the current CLI.
@@ -27,7 +27,7 @@ You need:
 - Python 3.9+
 - Project root at:
   - `/Users/pluto/Desktop/CodeSummarizer`
-- SemanticIR module at:
+- CodeIR module at:
   - `/Users/pluto/Desktop/CodeSummarizer`
 - Fixture repo at:
   - `tests/testRepositories/_fastapi-users-master`

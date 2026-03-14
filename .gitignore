@@ -2,7 +2,7 @@
 .idea/
 __pycache__/
 *.pyc
-.semanticir/
+.codeir/
 .env
 /_fastapi-users-master/
 /tests/_artifacts/

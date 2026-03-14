@@ -40,10 +40,10 @@ class TestCompressionSampling(unittest.TestCase):
         )
 
     def test_generate_random_before_after_samples(self) -> None:
-        entities_db = FASTAPI_FIXTURE / ".semanticir" / "entities.db"
+        entities_db = FASTAPI_FIXTURE / ".codeir" / "entities.db"
         self.assertTrue(FASTAPI_FIXTURE.exists(), msg=f"Missing fixture: {FASTAPI_FIXTURE}")
 
-        # Index at all levels to get L0-L3 rows
+        # Index at all levels to get Source/Behavior/Index rows
         index = self.run_cli("index", str(FASTAPI_FIXTURE), "--level", "all")
         self.assertEqual(index.returncode, 0, msg=index.stderr or index.stdout)
         self.assertTrue(entities_db.exists(), msg=f"Missing DB: {entities_db}")
@@ -82,9 +82,9 @@ class TestCompressionSampling(unittest.TestCase):
             mode = str(row["mode"])
             rows_by_id.setdefault(eid, {})[mode] = row
 
-        # Get entity IDs that have at least L0 and L1
-        entity_ids = [eid for eid, modes in rows_by_id.items() if "L0" in modes and "L1" in modes]
-        self.assertGreaterEqual(len(entity_ids), 20, msg="Not enough entities with L0+L1")
+        # Get entity IDs that have at least Source and Behavior
+        entity_ids = [eid for eid, modes in rows_by_id.items() if "Source" in modes and "Behavior" in modes]
+        self.assertGreaterEqual(len(entity_ids), 20, msg="Not enough entities with Source+Behavior")
 
         sample_count = random.randint(20, 30)
         sample_ids = random.sample(entity_ids, min(sample_count, len(entity_ids)))
@@ -103,8 +103,8 @@ class TestCompressionSampling(unittest.TestCase):
 
         for idx, eid in enumerate(sample_ids, start=1):
             modes = rows_by_id[eid]
-            # Use L0 row for source metadata
-            base_row = modes.get("L0") or next(iter(modes.values()))
+            # Use Source row for source metadata
+            base_row = modes.get("Source") or next(iter(modes.values()))
 
             src = _extract_source_slice(
                 repo_path=FASTAPI_FIXTURE,
@@ -130,15 +130,15 @@ class TestCompressionSampling(unittest.TestCase):
             lines.append("```")
             lines.append("")
             lines.append("### After (compressed IR by level)")
-            for level in ("L0", "L1", "L2", "L3"):
+            for level in ("Source", "Behavior", "Index"):
                 if level in modes:
                     mrow = modes[level]
                     lines.append(f"- {level}: ir_chars={mrow['ir_char_count']}, ir_tokens={mrow['ir_token_count']}, ratio={float(mrow['compression_ratio']):.4f}")
             lines.append("")
             lines.append("```text")
-            for level in ("L0", "L1", "L2", "L3"):
+            for level in ("Source", "Behavior", "Index"):
                 if level in modes:
-                    ir_text = str(modes[level]["ir_text"]).split("\n")[0]  # first line only for L0
+                    ir_text = str(modes[level]["ir_text"]).split("\n")[0]  # first line only for Source
                     lines.append(f"[{level}] {ir_text}")
             lines.append("```")
             lines.append("")

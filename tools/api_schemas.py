@@ -1,4 +1,4 @@
-"""Tool-facing wrappers around SemanticIR index APIs.
+"""Tool-facing wrappers around CodeIR index APIs.
 
 These wrappers return JSON-serializable dict payloads for agent tool-calling.
 """
@@ -32,7 +32,7 @@ def search_entities(query: str, repo_path: str | Path = ".", limit: int = 20) ->
     try:
         results = _search_entities(query=query, repo_path=_repo_path(repo_path), limit=int(limit))
     except FileNotFoundError as exc:
-        return _error(str(exc), hint="Run index first: semanticir index <repo_path>")
+        return _error(str(exc), hint="Run index first: codeir index <repo_path>")
 
     return {
         "ok": True,
@@ -42,7 +42,7 @@ def search_entities(query: str, repo_path: str | Path = ".", limit: int = 20) ->
     }
 
 
-def get_entity_ir(entity_id: str, repo_path: str | Path = ".", level: str = "L1") -> Dict[str, Any]:
+def get_entity_ir(entity_id: str, repo_path: str | Path = ".", level: str = "Behavior") -> Dict[str, Any]:
     """Fetch compressed IR for one entity ID."""
     if not str(entity_id).strip():
         return _error("entity_id must be non-empty")
@@ -51,15 +51,15 @@ def get_entity_ir(entity_id: str, repo_path: str | Path = ".", level: str = "L1"
         row = get_entity_with_ir(
             repo_path=_repo_path(repo_path),
             entity_id=entity_id,
-            mode=str(level).upper(),
+            mode=str(level),
         )
     except FileNotFoundError as exc:
-        return _error(str(exc), hint="Run index first: semanticir index <repo_path>")
+        return _error(str(exc), hint="Run index first: codeir index <repo_path>")
 
     if not row:
         return _error(
             f"entity not found: {entity_id}",
-            hint=f"Check ID and level (requested level={str(level).upper()}).",
+            hint=f"Check ID and level (requested level={level}).",
         )
 
     return {
@@ -77,7 +77,7 @@ def expand_entity_code(entity_id: str, repo_path: str | Path = ".") -> Dict[str,
     try:
         loc = get_entity_location(repo_path=repo, entity_id=entity_id)
     except FileNotFoundError as exc:
-        return _error(str(exc), hint="Run index first: semanticir index <repo_path>")
+        return _error(str(exc), hint="Run index first: codeir index <repo_path>")
 
     if not loc:
         return _error(f"entity not found: {entity_id}")

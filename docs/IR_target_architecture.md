@@ -1,18 +1,18 @@
-# SemanticIR Target Architecture
+# CodeIR Target Architecture
 
 This document captures intended behavior that is not yet guaranteed by current implementation.
 
 ## Intent
 
-- Use `L3` for global orientation.
-- Use `L1` for navigation and relevance filtering.
-- Require `L0` verification before write-time actions.
+- Use `Index` for global orientation.
+- Use `Behavior` for navigation and relevance filtering.
+- Require `Source` verification before write-time actions.
 - Optimize compression policy from observed expansion behavior.
 
 ## Target Runtime Behaviors
 
-- First-contact promotion to `L1` within a session.
-- Automatic `L0` gating for write operations.
+- First-contact promotion to `Behavior` within a session.
+- Automatic `Source` gating for write operations.
 - Pre-flight freshness checks before serving retrievals.
 - Session-level expansion logging and policy feedback loops.
 

@@ -1,12 +1,12 @@
 # Integration Examples
 
-This document shows practical integration patterns for SemanticIR in Claw-style agent systems.
+This document shows practical integration patterns for CodeIR in agent systems.
 
-## 1. Minimal Claw-Compatible Loop
+## 1. Typical Agent Workflow
 
-Use this sequence for a typical bug-triage or code-understanding session:
+Use this sequence for bug-triage or code-understanding sessions:
 
-1. Index repository (`L1` or mapped legacy mode).
+1. Index repository (`Behavior` or `Behavior+Index`).
 2. Generate `bearings.md` for fast architecture orientation.
 3. Use `search_entities` for candidate discovery.
 4. Use `get_entity_ir` for compressed reasoning.
@@ -15,21 +15,10 @@ Use this sequence for a typical bug-triage or code-understanding session:
 ## 2. CLI Bootstrap
 
 ```bash
-python3 cli.py index <repo_path> --level L1
-python3 cli.py bearings --repo-path <repo_path> --output <repo_path>/bearings.md
+codeir index <repo_path> --level Behavior
+codeir bearings --repo-path <repo_path>
+codeir rules --repo-path <repo_path>
 ```
-
-For legacy workflows:
-
-```bash
-python3 cli.py index <repo_path> --mode b
-```
-
-Mode mapping:
-
-- `a` -> `L3`
-- `b` -> `L1`
-- `hybrid` -> `L2`
 
 ## 3. Tool Wrapper Integration (Python Host)
 
@@ -42,7 +31,7 @@ repo = Path("/path/to/repo")
 hits = search_entities("oauth callback token", repo_path=repo, limit=8)
 if hits["ok"] and hits["results"]:
     top = hits["results"][0]["entity_id"]
-    ir = get_entity_ir(top, repo_path=repo, level="L1")
+    ir = get_entity_ir(top, repo_path=repo, level="Behavior")
     # Use IR for reasoning first
     if ir["ok"]:
         print(ir["entity"]["ir_text"])
@@ -50,7 +39,7 @@ if hits["ok"] and hits["results"]:
     src = expand_entity_code(top, repo_path=repo)
 ```
 
-## 4. Suggested Tool Contract for Claw Hosts
+## 4. Suggested Tool Contract for Agent Hosts
 
 Expose these 3 tools to the model:
 
@@ -66,7 +55,7 @@ Expected behavior:
 
 ## 5. Agent Prompting Pattern
 
-Recommended instruction style for Claw/OpenClaw/NanoClaw:
+Recommended instruction style:
 
 - "Use `search_entities` first to narrow candidates."
 - "Use `get_entity_ir` on top candidates before requesting source."
@@ -79,7 +68,9 @@ This keeps token cost low and preserves deterministic reasoning over stable IDs.
 `bearings.md` provides a module-level map with category and internal deps:
 
 ```bash
-python3 cli.py bearings --repo-path <repo_path>
+codeir bearings --repo-path <repo_path>
 ```
 
 Use it as first context file in your agent workspace before running entity-level tools.
+The `codeir rules` command generates a `.claude/rules/CodeIR.md` that embeds the
+bearings summary inline, so both get cached as one block on the first turn.

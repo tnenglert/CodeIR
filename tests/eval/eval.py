@@ -3,86 +3,11 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from index.indexer import index_repo
-from index.store.db import connect
-
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
-def _load_rows(repo_path: Path, mode: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Load entity+IR rows from entities.db, optionally filtered by compression level."""
-    db_path = repo_path / ".semanticir" / "entities.db"
-    if not db_path.exists():
-        raise FileNotFoundError(f"entities DB not found: {db_path}")
-
-    conn = connect(db_path)
-    conn.row_factory = sqlite3.Row
-
-    if mode:
-        rows = conn.execute(
-            """
-            SELECT
-              e.id AS entity_id,
-              e.qualified_name,
-              e.kind,
-              r.ir_text,
-              r.ir_json,
-              r.source_token_count,
-              r.ir_token_count,
-              r.compression_ratio,
-              r.mode
-            FROM entities AS e
-            JOIN ir_rows AS r ON r.entity_id = e.id
-            WHERE r.mode = ?
-            """,
-            (mode,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT
-              e.id AS entity_id,
-              e.qualified_name,
-              e.kind,
-              r.ir_text,
-              r.ir_json,
-              r.source_token_count,
-              r.ir_token_count,
-              r.compression_ratio,
-              r.mode
-            FROM entities AS e
-            JOIN ir_rows AS r ON r.entity_id = e.id
-            """
-        ).fetchall()
-    conn.close()
-
-    out: List[Dict[str, Any]] = []
-    for row in rows:
-        ir_json: Dict[str, Any]
-        try:
-            ir_json = json.loads(row["ir_json"])
-        except Exception:
-            ir_json = {}
-        out.append(
-            {
-                "entity_id": row["entity_id"],
-                "qualified_name": row["qualified_name"],
-                "kind": row["kind"],
-                "ir_text": row["ir_text"],
-                "ir_json": ir_json,
-                "source_token_count": int(row["source_token_count"]),
-                "ir_token_count": int(row["ir_token_count"]),
-                "compression_ratio": float(row["compression_ratio"]),
-                "mode": row["mode"],
-            }
-        )
-    return out
+from index.store.fetch import load_entity_ir_rows
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +55,7 @@ def evaluate_compression_levels(
         cfg = dict(base_config)
         cfg["compression_level"] = level
         index_repo(repo_path=repo_path, config=cfg)
-        rows = _load_rows(repo_path, mode=level)
+        rows = load_entity_ir_rows(repo_path, level=level, include_metrics=True)
         metrics = _level_metrics(rows, level=level)
         results.append(metrics)
 

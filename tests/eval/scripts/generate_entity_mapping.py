@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate entity ID to qualified name mapping for Aider benchmark comparison.
 
-This creates a JSON file mapping SemanticIR entity IDs to their qualified names,
+This creates a JSON file mapping CodeIR entity IDs to their qualified names,
 which is needed to score Aider's output (which uses qualified names) against
-SemanticIR's ground truth (which uses entity IDs).
+CodeIR's ground truth (which uses entity IDs).
 """
 
 import json
@@ -17,7 +17,7 @@ OUTPUT_DIR = ROOT / "tests" / "eval" / "baselines" / "aider"
 
 
 def main():
-    db_path = REPO_PATH / ".semanticir" / "entities.db"
+    db_path = REPO_PATH / ".codeir" / "entities.db"
 
     if not db_path.exists():
         print(f"Error: Index not found at {db_path}")
