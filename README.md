@@ -2,7 +2,7 @@
 
 CodeIR compiles Python codebases into a hierarchical semantic representation that fits in an LLM's context window. Instead of reading source files, your coding agent navigates architecture.
 
-Index a repo once. Your agent sees every entity, every call relationship, every module boundary Ñ before reading a single line of source.
+Index a repo once. Your agent sees every entity, every call relationship, every module boundary Ã‘ before reading a single line of source.
 
 ## Why
 
@@ -12,9 +12,9 @@ CodeIR compresses that away. It extracts the structural and behavioral informati
 
 | Level | What it contains | When to use it |
 |---|---|---|
-| **Index** | Entity names, types, locations, categories | Orientation Ñ what exists and where |
-| **Behavior** | Call graphs, flags, assignments, domain tags | Understanding Ñ what it does without reading source |
-| **Source** | Raw source code for a single entity | Verification Ñ read only what you need to edit |
+| **Index** | Entity names, types, locations, categories | Orientation Ã‘ what exists and where |
+| **Behavior** | Call graphs, flags, assignments, domain tags | Understanding Ã‘ what it does without reading source |
+| **Source** | Raw source code for a single entity | Verification Ã‘ read only what you need to edit |
 
 ## Compression
 
@@ -25,14 +25,14 @@ CodeIR compresses that away. It extracts the structural and behavioral informati
 | SQLAlchemy | 38,672 | ~5.0M | 467k | 11:1 |
 | Django | 41,819 | ~4.7M | 475k | 10:1 |
 
-*Estimated. 1 token Å 4 characters.
+*Estimated. 1 token per 4 characters.
 
-At Index level, CodeIR fits roughly 20,000 entities in a 200k context window. The same window holds fewer than 2,000 entities as raw source Ñ and only if you could perfectly select which files to load.
+At Index level, CodeIR fits roughly 20,000 entities in a 200k context window. The same window holds fewer than 2,000 entities as raw source Ã‘ and only if you could perfectly select which files to load.
 
 ## Installation
 
 ```bash
-pip install codeir
+pip install git+https://github.com/tnenglert/CodeIR.git
 ```
 
 ## Quick Start
@@ -87,7 +87,7 @@ Add a `codeir.md` file to `.claude/rules/` in your repository. Claude Code reads
 codeir init                        # generates .claude/rules/codeir.md with real entity IDs
 ```
 
-Once integrated, Claude Code uses CodeIR commands instead of reading raw files Ñ searching the IR, inspecting behavior summaries, and expanding only the source it needs.
+Once integrated, Claude Code uses CodeIR commands instead of reading raw files Ã‘ searching the IR, inspecting behavior summaries, and expanding only the source it needs.
 
 ## Reading Behavior IR
 
