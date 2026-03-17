@@ -384,7 +384,11 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             file_hashes[rel_path] = content_hash
             file_sizes[rel_path] = file_path.stat().st_size
 
-            tree = parse_ast(file_path)
+            try:
+                tree = parse_ast(file_path)
+            except (ValueError, SyntaxError) as e:
+                print(f"Skipping {file_path}: {e}")
+                continue
             if tree is None:
                 file_classifications[rel_path] = "core_logic"
                 file_domains[rel_path] = "unknown"
