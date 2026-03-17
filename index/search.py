@@ -67,7 +67,7 @@ def search_entities(query: str, repo_path: Path, limit: int = 50, category: Opti
 
         sql = f"""
             SELECT entities.id, entities.{qualified_col} AS qualified_name,
-                   entities.file_path, entities.start_line, entities.kind
+                   entities.file_path, entities.start_line, entities.end_line, entities.kind
             FROM entities
             {join_clause}
             WHERE ({" OR ".join(where_clauses)})
@@ -98,6 +98,7 @@ def search_entities(query: str, repo_path: Path, limit: int = 50, category: Opti
             "file_path": row["file_path"],
             "line": row["start_line"],
             "kind": row["kind"],
+            "line_count": row["end_line"] - row["start_line"] + 1 if row["end_line"] else None,
         }
         for row in rows
     ]

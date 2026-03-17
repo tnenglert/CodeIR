@@ -103,10 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_modmap.add_argument("--repo-path", type=Path, default=Path("."))
 
     # bearings
-    p_bearings = sub.add_parser("bearings", help="Generate bearings.md context file")
-    p_bearings.add_argument("repo_path", nargs="?", type=Path, default=None, help="Repository path (default: .)")
-    p_bearings.add_argument("--repo-path", type=Path, default=Path("."), dest="repo_path_flag")
-    p_bearings.add_argument("--output", type=Path, default=None, help="Output path (default: bearings.md)")
+    p_bearings = sub.add_parser("bearings", help="Show orientation context with tiered menu")
+    p_bearings.add_argument("category", nargs="?", default=None, help="Category to show (e.g., core_logic, tests)")
+    p_bearings.add_argument("--repo-path", type=Path, default=Path("."))
+    p_bearings.add_argument("--full", action="store_true", help="Output full bearings.md")
+    p_bearings.add_argument("--generate", action="store_true", help="Generate/regenerate bearings files")
 
     # callers
     p_callers = sub.add_parser("callers", help="Show what calls a given entity")
@@ -289,7 +290,8 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(f"No entities found. Try: codeir grep \"{query_str}\" to search file contents.")
         return
     for r in results:
-        print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}]")
+        line_info = f", ~{r['line_count']} lines" if r.get('line_count') else ""
+        print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -321,6 +323,47 @@ def cmd_expand(args: argparse.Namespace) -> None:
     print(f"Entity: {loc['qualified_name']}  [{loc['kind']}]")
     print(f"File:   {loc['file_path']}:{loc['start_line']}-{loc['end_line']}")
     print(f"\n{source}")
+
+    # Dependency summary footer
+    db_path = repo_path / ".codeir" / "entities.db"
+    if db_path.exists():
+        conn = connect(db_path)
+        try:
+            # Get totals
+            totals = conn.execute("""
+                SELECT COUNT(*) as caller_count,
+                       COUNT(DISTINCT caller_file) as file_count
+                FROM callers
+                WHERE entity_id = ?
+            """, [args.entity_id]).fetchone()
+            caller_count = totals[0] if totals else 0
+            file_count = totals[1] if totals else 0
+
+            if caller_count > 0:
+                # Get top 3 files by reference count
+                top_files = conn.execute("""
+                    SELECT caller_name, caller_file, COUNT(*) as refs
+                    FROM callers
+                    WHERE entity_id = ?
+                    GROUP BY caller_file
+                    ORDER BY refs DESC, caller_file
+                    LIMIT 3
+                """, [args.entity_id]).fetchall()
+
+                caller_word = "caller" if caller_count == 1 else "callers"
+                file_word = "file" if file_count == 1 else "files"
+                print(f"\n\u26a0 {caller_count} {caller_word} across {file_count} {file_word}")
+                for row in top_files:
+                    # Extract just the filename from the path for brevity
+                    caller_name = row[0].split(".")[-1] if "." in row[0] else row[0]
+                    file_path = row[1]
+                    refs = row[2]
+                    ref_word = "ref" if refs == 1 else "refs"
+                    print(f"  {caller_name} ({file_path}) \u2014 {refs} {ref_word}")
+                if file_count > 3:
+                    print(f"  Run `codeir callers {args.entity_id}` for full list.")
+        finally:
+            conn.close()
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
@@ -679,8 +722,8 @@ def _compute_module_ids(modules: list) -> Dict[str, str]:
     return result
 
 
-def cmd_bearings(args: argparse.Namespace) -> None:
-    repo_path = (args.repo_path or args.repo_path_flag).resolve()
+def _generate_bearings_files(repo_path: Path) -> None:
+    """Generate all bearings files (summary, full, per-category)."""
     db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         print("No index found. Run `codeir index <repo_path>` first.")
@@ -712,12 +755,11 @@ def cmd_bearings(args: argparse.Namespace) -> None:
         for row in rows
     ]
 
-    # Assign module IDs (computed, not persisted)
     module_ids = _compute_module_ids(modules)
 
     from ir.classifier import generate_context_file, generate_summary, generate_category_file
 
-    claude_dir = args.output.parent if args.output else (repo_path / ".claude")
+    claude_dir = repo_path / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
 
     # Tier 1: bearings-summary.md
@@ -727,7 +769,7 @@ def cmd_bearings(args: argparse.Namespace) -> None:
 
     # Tier 2: bearings.md (collapsed working map)
     bearings_content = generate_context_file(repo_path.name, modules, total, module_ids)
-    bearings_path = args.output or (claude_dir / "bearings.md")
+    bearings_path = claude_dir / "bearings.md"
     bearings_path.write_text(bearings_content, encoding="utf-8")
 
     # Tier 3: bearings/{category}.md (full uncollapsed per category)
@@ -747,6 +789,69 @@ def cmd_bearings(args: argparse.Namespace) -> None:
     print(f"  Summary:    {summary_path}")
     print(f"  Working map:{bearings_path}")
     print(f"  Categories: {bearings_dir}/ ({len(by_cat)} files)")
+
+
+def _estimate_tokens(file_path: Path) -> int:
+    """Estimate token count from file size (chars / 4)."""
+    if not file_path.exists():
+        return 0
+    return file_path.stat().st_size // 4
+
+
+def cmd_bearings(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    claude_dir = repo_path / ".claude"
+
+    # --generate mode: regenerate all files
+    if args.generate:
+        _generate_bearings_files(repo_path)
+        return
+
+    # Check if bearings files exist
+    summary_path = claude_dir / "bearings-summary.md"
+    bearings_path = claude_dir / "bearings.md"
+    bearings_dir = claude_dir / "bearings"
+
+    if not summary_path.exists():
+        print("No bearings files found. Run `codeir bearings --generate` first.")
+        return
+
+    # --full mode: output full bearings.md
+    if args.full:
+        if not bearings_path.exists():
+            print("bearings.md not found. Run `codeir bearings --generate` first.")
+            return
+        print(bearings_path.read_text(encoding="utf-8"))
+        return
+
+    # Category mode: output specific category file
+    if args.category:
+        cat_path = bearings_dir / f"{args.category}.md"
+        if not cat_path.exists():
+            # List available categories
+            available = [f.stem for f in bearings_dir.glob("*.md")] if bearings_dir.exists() else []
+            print(f"Category '{args.category}' not found.")
+            if available:
+                print(f"Available: {', '.join(sorted(available))}")
+            return
+        print(cat_path.read_text(encoding="utf-8"))
+        return
+
+    # Default: show summary + menu with token estimates
+    print(summary_path.read_text(encoding="utf-8"))
+
+    # Build menu with token estimates
+    full_tokens = _estimate_tokens(bearings_path)
+    print(f"---")
+    print(f"Full bearings: `codeir bearings --full` (~{full_tokens:,} tokens)")
+
+    if bearings_dir.exists():
+        cat_files = sorted(bearings_dir.glob("*.md"))
+        if cat_files:
+            print(f"\nBy category:")
+            for cat_path in cat_files:
+                cat_tokens = _estimate_tokens(cat_path)
+                print(f"  {cat_path.stem:15s}  `codeir bearings {cat_path.stem}` (~{cat_tokens:,} tokens)")
 
 
 def cmd_rules(args: argparse.Namespace) -> None:

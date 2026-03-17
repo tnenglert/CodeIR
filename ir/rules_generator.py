@@ -114,23 +114,6 @@ def annotate_behavior_ir(qualified_name: str, kind: str, ir_text: str) -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_module_line_example(conn: sqlite3.Connection) -> str:
-    """Get a representative module line for the Orient section."""
-    row = conn.execute("""
-        SELECT m.file_path, m.category, m.entity_count
-        FROM modules m
-        WHERE m.entity_count > 5
-        ORDER BY m.entity_count DESC
-        LIMIT 1
-    """).fetchone()
-    if row:
-        fp = Path(row[0]).name
-        from ir.stable_ids import make_module_base_id
-        mid = make_module_base_id(row[0])
-        return f"MD {mid} {fp} | cat:{row[1]} | entities:{row[2]} | deps:- | churn:-"
-    return "MD MAIN main.py | cat:core_logic | entities:50 | deps:- | churn:-"
-
-
 def _get_behavior_example(conn: sqlite3.Connection) -> Tuple[str, str]:
     """Pick one rich Behavior IR line and annotate it.
 
@@ -164,25 +147,40 @@ def _get_behavior_example(conn: sqlite3.Connection) -> Tuple[str, str]:
 _TEMPLATE = """\
 ## Access to CodeIR
 
-Commands: `search` (by name) | `grep` (by content) | `show` | `expand` | `callers` | `impact` | `scope`
+Commands: `bearings` | `search` | `grep` | `show` | `expand` | `callers` | `impact` | `scope`
 
-This repository includes a pre-built working model of the entire codebase — its structure, logic, and relationships — that fits in your context window. It's the equivalent of having already read every file and retained the important parts: what each piece does, what it calls, where it fits in the architecture.
+This repository includes a pre-built working model of the entire codebase — its structure, logic, and relationships — that fits in your context window.
 
-### Codebase overview
+Orient via `codeir bearings` — shows project summary with a menu of category-specific views and token estimates. For large codebases, load only the categories you need.
 
-{bearings_summary}
+### Two workflows
 
-For the full working map, read `.claude/bearings.md`. For large codebases, drill into specific categories via `.claude/bearings/{{category}}.md`.
+**Bug fix / investigation** — find the problem fast:
 
-### How to use it
+1. `codeir bearings` → orient
+2. `codeir search` → find the most likely entity
+3. `codeir show` → read its Behavior IR
+4. `codeir expand` → read source, form your hypothesis
 
-The working model is served through **CodeIR**, which gives you three levels of depth. Start shallow, go deeper only as needed.
+**Stop here.** If the source confirms your hypothesis, propose the fix. Do not expand additional entities to verify what you can already see. Do not search for how the bug is triggered elsewhere. If your theory is wrong, you'll know — go back to step 2.
 
-**Orient** — read bearings files under `.claude/`:
-- **`.claude/bearings.md`** — Full working map: every module with ID, filename, category, entity count, and dependencies.
-- **`.claude/bearings/{{category}}.md`** — Per-category detail for large codebases. Load only what you need.
+**Architecture / refactor** — understand before changing:
 
-Module line format: `{module_line_example}`
+1. `codeir bearings` → orient on project structure
+2. `codeir search` → find relevant entities
+3. `codeir show` → understand behavior and call relationships
+4. `codeir callers` / `codeir impact` → map what depends on your target
+5. `codeir scope` → get the full context needed for safe modification
+6. `codeir expand` → read source for entities you need to change
+
+### Commands
+
+**Bearings** — orientation context with automatic tiering:
+```
+codeir bearings                    # summary + menu with token estimates
+codeir bearings [category]         # specific category (e.g., core_logic)
+codeir bearings --full             # full module map
+```
 
 **Search** — find entities by name, file, or kind:
 ```
@@ -212,7 +210,6 @@ codeir expand <entity_id>
 codeir callers <entity_id>
 ```
 Results marked `~` are probable but not certain. Use `--resolution local` for same-file only.
-When planning changes to a method, run `codeir callers <entity>` and expand at least one caller to check sequencing and context constraints.
 
 **Impact** — reverse dependency analysis (BFS through callers):
 ```
@@ -241,19 +238,6 @@ Example:
 {behavior_ir}
 ```
 → {behavior_annotation}
-
-### Example workflow
-
-Search doesn't find what you need? Grep for it in source, then drill down:
-
-1. `codeir search "flush"` → no relevant results
-2. `codeir grep "def flush" --path orm/` → finds entity `FLSH.04` in `orm/session.py`
-3. `codeir show FLSH.04` → see Behavior IR: what it calls, flags, assignments
-4. `codeir callers FLSH.04` → see what depends on it
-5. `codeir impact FLSH.04 --depth 2` → understand blast radius before changing
-6. `codeir expand FLSH.04` → read source only for the entity you need to modify
-
-Start at the highest level of abstraction. Drop to source when you need to verify behavior, check sequencing, or understand how your target is called.
 """
 
 
@@ -271,21 +255,11 @@ def generate_rules_file(repo_path: Path) -> str:
     conn.row_factory = sqlite3.Row
 
     try:
-        module_line_example = _get_module_line_example(conn)
         behavior_ir, behavior_annotation = _get_behavior_example(conn)
     finally:
         conn.close()
 
-    # Read bearings summary to embed inline
-    bearings_summary_path = repo_path / ".claude" / "bearings-summary.md"
-    if bearings_summary_path.exists():
-        bearings_summary = bearings_summary_path.read_text(encoding="utf-8").strip()
-    else:
-        bearings_summary = "(Run `codeir bearings --repo-path .` to generate the codebase overview.)"
-
     return _TEMPLATE.format(
-        bearings_summary=bearings_summary,
-        module_line_example=module_line_example,
         behavior_ir=behavior_ir,
         behavior_annotation=behavior_annotation,
     )

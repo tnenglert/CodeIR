@@ -597,6 +597,8 @@ def generate_context_file(
     lines.append("")
     lines.append(f"Files: {len(modules)} | Entities: {total_entities}")
     lines.append("")
+    lines.append("> IR for triage. `callers`/`impact` for blast radius. `expand` where mechanism is ambiguous. Targeted code reads to fill in understanding or plan changes.")
+    lines.append("")
 
     for category in sorted(by_cat):
         cat_mods = by_cat[category]
