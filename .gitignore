@@ -28,10 +28,8 @@ htmlcov/
 .codeir/
 .env
 /.claude/
-/tests/_artifacts/
+/tests/
 /_fastapi-users-master/
-tests/eval/results/
-tests/testRepositories/
 
 # Temp files
 ~$*
