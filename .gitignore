@@ -1,13 +1,40 @@
+# OS
 .DS_Store
+
+# IDE
 .idea/
+.vscode/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Linters/Type checkers
+.mypy_cache/
+.ruff_cache/
+
+# Project-specific
 .codeir/
 .env
-/_fastapi-users-master/
-/tests/_artifacts/
 /.claude/
-~$*
-*.docx
+/tests/_artifacts/
+/_fastapi-users-master/
 tests/eval/results/
 tests/testRepositories/
+
+# Temp files
+~$*
+*.docx
+*.bak
+*.rtf

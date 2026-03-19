@@ -1,4 +1,0 @@
-cli
-index
-ir
-tools
