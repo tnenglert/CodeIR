@@ -21,10 +21,10 @@ def compact_stem(value: str) -> str:
     # Short words: keep intact for clarity
     if len(cleaned) <= 4:
         return cleaned.upper()
-    # Longer words: vowel-strip for compression
+    # Longer words: vowel-strip for compression, max 12 chars
     first = cleaned[0]
     rest = re.sub(r"[AEIOUaeiou]", "", cleaned[1:])
-    return (first + rest).upper()
+    return (first + rest).upper()[:12]
 
 
 def type_prefix_for_kind(kind: str) -> str:

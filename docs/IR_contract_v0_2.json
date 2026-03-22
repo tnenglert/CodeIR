@@ -49,7 +49,7 @@
       "required_fields": ["TYPE", "ENTITY_ID", "#CATE"],
       "optional_tags": ["#DOMAIN"],
       "field_semantics": {
-        "#DOMAIN": "Uppercased module domain tag (omitted when unknown)",
+        "#DOMAIN": "Uppercased module domain tag, no truncation (omitted when unknown)",
         "#CATE": "Uppercased first 4 chars of module category"
       },
       "internal_only": {
@@ -60,12 +60,12 @@
   "domain_tags": {
     "HTTP": "http",
     "AUTH": "auth",
-    "CRYP": "crypto",
+    "CRYPTO": "crypto",
     "DB": "db",
     "FS": "fs",
     "CLI": "cli",
-    "ASYN": "async",
-    "PARS": "parse",
+    "ASYNC": "async",
+    "PARSE": "parse",
     "NET": "net"
   },
   "module_categories": {

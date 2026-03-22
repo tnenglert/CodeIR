@@ -183,17 +183,17 @@ MT URLDFLTS C=append F=R #CORE
 
 ### Index (Sparse Orientation)
 ```
-FN SPLTBLPRNTPTH #CORE
+FN SPLTBLPRNTPT #CORE
 ```
 
 ### Behavior (Behavioral Navigation)
 ```
-FN SPLTBLPRNTPTH C=_split_blueprint_path,extend,rpartition F=IR A=1 #CORE
+FN SPLTBLPRNTPT C=_split_blueprint_path,extend,rpartition F=IR A=1 #CORE
 ```
 
 ### Source (Raw Source)
 ```python
-[FN SPLTBLPRNTPTH @src/flask/helpers.py:645]
+[FN SPLTBLPRNTPT @src/flask/helpers.py:645]
 def _split_blueprint_path(name: str) -> list[str]:
     out: list[str] = [name]
 

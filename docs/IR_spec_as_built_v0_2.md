@@ -63,14 +63,14 @@ Format:
 TYPE ENTITY_ID [#DOMAIN] #CATE
 ```
 
-- `#DOMAIN`: uppercased domain if known
-- `#CATE`: first 4 chars of category, uppercased
+- `#DOMAIN`: uppercased domain if known (no truncation)
+- `#CATE`: first 4 chars of category, uppercased (truncated)
 
 Note: The pattern fingerprint (`pattern_id`) is computed and stored in the index for change detection, but is not included in the text representation served to models (zero semantic signal at selection time).
 
 Domains currently emitted from classifier signals:
 
-- `#HTTP`, `#AUTH`, `#CRYP`, `#DB`, `#FS`, `#CLI`, `#ASYN`, `#PARS`, `#NET`
+- `#HTTP`, `#AUTH`, `#CRYPTO`, `#DB`, `#FS`, `#CLI`, `#ASYNC`, `#PARSE`, `#NET`
 
 Categories currently emitted:
 
