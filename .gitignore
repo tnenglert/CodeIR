@@ -30,6 +30,7 @@ pytest.ini
 .env
 /.claude/
 /tests/
+!/tests/unit/
 /_fastapi-users-master/
 
 # Temp files
