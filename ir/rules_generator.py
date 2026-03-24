@@ -226,6 +226,21 @@ codeir scope <entity_id>
 ```
 Returns the entity's callers, callees, and sibling methods (same class). Use before editing to understand what you might break and what the entity depends on.
 
+### Annotated entity lists
+
+Output from `callers`, `impact`, and `scope` includes inline triage metadata:
+```
+  CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+  GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+  TSTCCNTDBTCR    [0 callers]              tests/test_module.py   [method, ~40 lines]
+```
+
+- `[N callers]` — how many entities call this one (connectivity/importance)
+- `→Pattern` — pattern membership (e.g., `→ModelSQL` means standard infrastructure)
+- `[kind, ~N lines]` — entity type and size
+
+Use this to triage without additional `show` calls: high caller count = infrastructure, pattern member = standard implementation, test file + 0 callers = skip unless specifically needed.
+
 ### Reading compressed representations
 
 Behavior fields:

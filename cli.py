@@ -40,6 +40,105 @@ from index.store.stats import get_stats
 # Pattern feature toggle - set to False for vanilla CodeIR testing
 PATTERNS_ENABLED = True
 
+
+def get_entity_annotations(conn: sqlite3.Connection, entity_ids: list) -> Dict[str, Dict]:
+    """Fetch annotation metadata for a list of entity IDs.
+
+    Returns dict mapping entity_id to:
+      - caller_count: number of callers
+      - pattern_base: base class name if in a pattern, else None
+      - kind: entity kind (function, method, class, etc.)
+      - line_count: end_line - start_line + 1
+    """
+    if not entity_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(entity_ids))
+
+    # Get basic entity info
+    entity_rows = conn.execute(f"""
+        SELECT id, kind, start_line, end_line
+        FROM entities
+        WHERE id IN ({placeholders})
+    """, entity_ids).fetchall()
+
+    annotations = {}
+    for row in entity_rows:
+        eid = row[0]
+        start = row[2] or 0
+        end = row[3] or 0
+        annotations[eid] = {
+            "caller_count": 0,
+            "pattern_base": None,
+            "kind": row[1],
+            "line_count": max(1, end - start + 1),
+        }
+
+    # Get caller counts
+    caller_rows = conn.execute(f"""
+        SELECT entity_id, COUNT(*) as cnt
+        FROM callers
+        WHERE entity_id IN ({placeholders})
+        GROUP BY entity_id
+    """, entity_ids).fetchall()
+
+    for row in caller_rows:
+        if row[0] in annotations:
+            annotations[row[0]]["caller_count"] = row[1]
+
+    # Get pattern membership (if patterns table exists)
+    try:
+        pattern_rows = conn.execute(f"""
+            SELECT pm.entity_id, p.base_class
+            FROM pattern_members pm
+            JOIN patterns p ON pm.pattern_id = p.pattern_id
+            WHERE pm.entity_id IN ({placeholders})
+        """, entity_ids).fetchall()
+
+        for row in pattern_rows:
+            if row[0] in annotations:
+                annotations[row[0]]["pattern_base"] = row[1]
+    except sqlite3.OperationalError:
+        pass  # patterns table doesn't exist
+
+    return annotations
+
+
+def format_annotated_entity(
+    entity_id: str,
+    file_path: str,
+    annotations: Dict[str, Dict],
+    marker: str = " ",
+    show_ir: bool = False,
+    ir_text: str = "",
+) -> str:
+    """Format an entity line with inline annotations.
+
+    Output format:
+      {marker}{entity_id:20s}  [{N} callers] {→Pattern}  {file_path}  [{kind}, ~{lines} lines]
+    """
+    ann = annotations.get(entity_id, {})
+    caller_count = ann.get("caller_count", 0)
+    pattern_base = ann.get("pattern_base")
+    kind = ann.get("kind", "?")
+    line_count = ann.get("line_count", 0)
+
+    # Format caller count
+    caller_str = f"[{caller_count} callers]" if caller_count > 0 else "[0 callers]"
+
+    # Format pattern (if any)
+    pattern_str = f"→{pattern_base}" if pattern_base else ""
+
+    # Format kind and lines
+    kind_str = f"[{kind}, ~{line_count} lines]"
+
+    # Build the line with aligned columns
+    # Entity ID (20), caller count (12), pattern (12), file path (variable), kind/lines
+    line = f"{marker}{entity_id:20s}  {caller_str:12s} {pattern_str:12s}  {file_path:40s}  {kind_str}"
+
+    return line
+
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
     "extensions": [".py"],
@@ -573,6 +672,10 @@ def cmd_callers(args: argparse.Namespace) -> None:
         sql += " ORDER BY resolution, caller_name"
         rows = conn.execute(sql, params).fetchall()
 
+        # Get annotations for all callers
+        caller_ids = [row["caller_id"] for row in rows]
+        annotations = get_entity_annotations(conn, caller_ids)
+
         # Check for ambiguous calls - entities that call this name but weren't resolved
         # Look for calls_json containing ".{name}" pattern (qualified calls)
         ambiguous_pattern = f'%.{entity_name}"%'
@@ -596,10 +699,18 @@ def cmd_callers(args: argparse.Namespace) -> None:
         print(f"No callers found for: {args.entity_id}")
         return
 
-    # Print resolved callers
+    # Print header
+    print(f"Callers of {args.entity_id} ({len(rows)} callers):")
+
+    # Print resolved callers with annotations
     for row in rows:
         marker = "~" if row["resolution"] == "fuzzy" else " "
-        print(f" {marker}{row['caller_id']:20s}  {row['caller_name']:40s}  {row['caller_file']}  [{row['resolution']}]")
+        print(format_annotated_entity(
+            entity_id=row["caller_id"],
+            file_path=row["caller_file"],
+            annotations=annotations,
+            marker=marker,
+        ))
 
     # Print ambiguous callers with actionable info
     if ambiguous_rows:
@@ -634,12 +745,21 @@ def cmd_impact(args: argparse.Namespace) -> None:
     conn.row_factory = sqlite3.Row
 
     result = compute_impact(conn, args.entity_id, depth=args.depth, level=args.level)
-    conn.close()
 
     root = result["root"]
     if not root:
+        conn.close()
         print(f"Entity not found: {args.entity_id}")
         return
+
+    # Collect all entity IDs for annotations
+    impact_by_depth = result["impact_by_depth"]
+    all_entity_ids = []
+    for items in impact_by_depth.values():
+        all_entity_ids.extend(item["entity_id"] for item in items)
+
+    annotations = get_entity_annotations(conn, all_entity_ids)
+    conn.close()
 
     print(f"Impact analysis for: {root['qualified_name']}  [{root['kind']}]")
     print(f"File: {root['file_path']}:{root['start_line']}")
@@ -647,7 +767,6 @@ def cmd_impact(args: argparse.Namespace) -> None:
         print(f"IR:   {root['ir_text']}")
     print()
 
-    impact_by_depth = result["impact_by_depth"]
     total_affected = sum(len(items) for items in impact_by_depth.values())
     if total_affected == 0:
         print("No downstream dependents found.")
@@ -664,10 +783,12 @@ def cmd_impact(args: argparse.Namespace) -> None:
         print(f"--- {label} ({len(items)} entities) ---")
         for item in sorted(items, key=lambda x: (x["file_path"], x["qualified_name"])):
             marker = "~" if item["resolution"] == "fuzzy" else " "
-            loc = f"{item['file_path']}:{item['start_line']}" if item["start_line"] else item["file_path"]
-            print(f" {marker}{item['entity_id']:20s}  {item['qualified_name']:40s}  {loc}  [{item['kind']}]")
-            if item["ir_text"]:
-                print(f"  {'':20s}  IR: {item['ir_text']}")
+            print(format_annotated_entity(
+                entity_id=item["entity_id"],
+                file_path=item["file_path"],
+                annotations=annotations,
+                marker=marker,
+            ))
             if depth > 1:
                 print(f"  {'':20s}  via: {item['via']}")
         print()
@@ -682,15 +803,22 @@ def cmd_scope(args: argparse.Namespace) -> None:
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
-    try:
-        result = compute_scope(conn, args.entity_id, level=args.level)
-    finally:
-        conn.close()
+
+    result = compute_scope(conn, args.entity_id, level=args.level)
 
     root = result["root"]
     if not root:
+        conn.close()
         print(f"Entity not found: {args.entity_id}")
         return
+
+    # Collect all entity IDs for annotations
+    all_entity_ids = []
+    for group in [result["callers"], result["callees"], result["siblings"]]:
+        all_entity_ids.extend(item["entity_id"] for item in group)
+
+    annotations = get_entity_annotations(conn, all_entity_ids)
+    conn.close()
 
     print(f"Scope for: {root['qualified_name']}  [{root['kind']}]")
     print(f"File: {root['file_path']}:{root['start_line']}")
@@ -704,10 +832,12 @@ def cmd_scope(args: argparse.Namespace) -> None:
         print(f"--- {label} ({len(items)}) ---")
         for item in items:
             marker = "~" if item.get("resolution") == "fuzzy" else " "
-            loc = f"{item['file_path']}:{item['start_line']}"
-            print(f" {marker}{item['entity_id']:20s}  {item['qualified_name']:40s}  {loc}  [{item['kind']}]")
-            if item["ir_text"]:
-                print(f"  {'':20s}  IR: {item['ir_text']}")
+            print(format_annotated_entity(
+                entity_id=item["entity_id"],
+                file_path=item["file_path"],
+                annotations=annotations,
+                marker=marker,
+            ))
         print()
 
     _print_group("callers (what calls this)", result["callers"])
