@@ -33,7 +33,7 @@ from index.indexer import index_repo, map_legacy_mode_to_level
 from index.locator import extract_code_slice
 from index.search import compute_impact, compute_scope, grep_entities, search_entities
 from index.store.db import column_names, connect
-from index.store.fetch import get_entity_all_levels, get_entity_location, get_entity_with_ir
+from index.store.fetch import get_entities_by_pattern, get_entity_all_levels, get_entity_location, get_entity_with_ir
 from index.store.stats import get_stats
 
 
@@ -91,8 +91,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--full", action="store_true", help="Show full IR (skip smart pattern view)")
 
     # expand
-    p_expand = sub.add_parser("expand", help="Show raw source for an entity")
-    p_expand.add_argument("entity_id")
+    p_expand = sub.add_parser("expand", help="Show raw source for entities (supports STEM.* wildcards)")
+    p_expand.add_argument("entity_ids", nargs="+", metavar="ENTITY_ID",
+                          help="One or more entity IDs, or STEM.* for all siblings")
     p_expand.add_argument("--repo-path", type=Path, default=Path("."))
 
     # compare
@@ -418,60 +419,92 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 def cmd_expand(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    loc = get_entity_location(repo_path=repo_path, entity_id=args.entity_id)
-    if not loc:
-        print(f"Entity not found: {args.entity_id}")
-        return
-    source = extract_code_slice(
-        repo_path=repo_path,
-        file_path=str(loc["file_path"]),
-        start_line=int(loc["start_line"]),
-        end_line=int(loc["end_line"]),
-    )
-    print(f"Entity: {loc['qualified_name']}  [{loc['kind']}]")
-    print(f"File:   {loc['file_path']}:{loc['start_line']}-{loc['end_line']}")
-    print(f"\n{source}")
 
-    # Dependency summary footer
-    db_path = repo_path / ".codeir" / "entities.db"
-    if db_path.exists():
-        conn = connect(db_path)
-        try:
-            # Get totals
-            totals = conn.execute("""
-                SELECT COUNT(*) as caller_count,
-                       COUNT(DISTINCT caller_file) as file_count
-                FROM callers
-                WHERE entity_id = ?
-            """, [args.entity_id]).fetchone()
-            caller_count = totals[0] if totals else 0
-            file_count = totals[1] if totals else 0
+    # Collect all entities from provided IDs (expanding wildcards)
+    all_entities = []
+    not_found = []
 
-            if caller_count > 0:
-                # Get top 3 files by reference count
-                top_files = conn.execute("""
-                    SELECT caller_name, caller_file, COUNT(*) as refs
+    for pattern in args.entity_ids:
+        if pattern.endswith(".*"):
+            # Wildcard pattern: STEM.*
+            matches = get_entities_by_pattern(repo_path=repo_path, pattern=pattern)
+            if matches:
+                all_entities.extend(matches)
+            else:
+                not_found.append(pattern)
+        else:
+            # Exact entity ID
+            loc = get_entity_location(repo_path=repo_path, entity_id=pattern)
+            if loc:
+                all_entities.append(loc)
+            else:
+                not_found.append(pattern)
+
+    if not_found:
+        for nf in not_found:
+            print(f"Entity not found: {nf}")
+        if not all_entities:
+            return
+
+    # Batch mode: multiple entities
+    is_batch = len(all_entities) > 1
+
+    if is_batch:
+        print(f"=== Expanding {len(all_entities)} entities ===\n")
+
+    for i, loc in enumerate(all_entities):
+        if is_batch and i > 0:
+            print("\n" + "─" * 60 + "\n")
+
+        source = extract_code_slice(
+            repo_path=repo_path,
+            file_path=str(loc["file_path"]),
+            start_line=int(loc["start_line"]),
+            end_line=int(loc["end_line"]),
+        )
+        print(f"Entity: {loc['qualified_name']}  [{loc['kind']}]")
+        print(f"File:   {loc['file_path']}:{loc['start_line']}-{loc['end_line']}")
+        print(f"\n{source}")
+
+    # Dependency summary footer (only for single entity)
+    if not is_batch and all_entities:
+        entity_id = all_entities[0]["entity_id"]
+        db_path = repo_path / ".codeir" / "entities.db"
+        if db_path.exists():
+            conn = connect(db_path)
+            try:
+                totals = conn.execute("""
+                    SELECT COUNT(*) as caller_count,
+                           COUNT(DISTINCT caller_file) as file_count
                     FROM callers
                     WHERE entity_id = ?
-                    GROUP BY caller_file
-                    ORDER BY refs DESC, caller_file
-                    LIMIT 3
-                """, [args.entity_id]).fetchall()
+                """, [entity_id]).fetchone()
+                caller_count = totals[0] if totals else 0
+                file_count = totals[1] if totals else 0
 
-                caller_word = "caller" if caller_count == 1 else "callers"
-                file_word = "file" if file_count == 1 else "files"
-                print(f"\n\u26a0 {caller_count} {caller_word} across {file_count} {file_word}")
-                for row in top_files:
-                    # Extract just the filename from the path for brevity
-                    caller_name = row[0].split(".")[-1] if "." in row[0] else row[0]
-                    file_path = row[1]
-                    refs = row[2]
-                    ref_word = "ref" if refs == 1 else "refs"
-                    print(f"  {caller_name} ({file_path}) \u2014 {refs} {ref_word}")
-                if file_count > 3:
-                    print(f"  Run `codeir callers {args.entity_id}` for full list.")
-        finally:
-            conn.close()
+                if caller_count > 0:
+                    top_files = conn.execute("""
+                        SELECT caller_name, caller_file, COUNT(*) as refs
+                        FROM callers
+                        WHERE entity_id = ?
+                        GROUP BY caller_file
+                        ORDER BY refs DESC, caller_file
+                        LIMIT 3
+                    """, [entity_id]).fetchall()
+
+                    caller_word = "caller" if caller_count == 1 else "callers"
+                    file_word = "file" if file_count == 1 else "files"
+                    print(f"\n\u26a0 {caller_count} {caller_word} across {file_count} {file_word}")
+                    for row in top_files:
+                        caller_name = row[0].split(".")[-1] if "." in row[0] else row[0]
+                        file_path = row[1]
+                        refs = row[2]
+                        ref_word = "ref" if refs == 1 else "refs"
+                        print(f"  {caller_name} ({file_path}) \u2014 {refs} {ref_word}")
+                    if file_count > 3:
+                        print(f"  Run `codeir callers {entity_id}` for full list.")
+            finally:
+                conn.close()
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
