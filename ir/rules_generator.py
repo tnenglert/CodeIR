@@ -202,8 +202,11 @@ Index = what it is. Behavior = what it does and calls. Default is Behavior.
 
 **Expand** — retrieve raw source when you need to edit or verify:
 ```
-codeir expand <entity_id>
+codeir expand <entity_id>              # single entity
+codeir expand <id1> <id2> <id3>        # multiple entities in one call
+codeir expand 'STEM.*'                 # all siblings (STEM, STEM.01, STEM.02, ...)
 ```
+Batch expand is useful when tracing through a known call chain or examining all methods of a class.
 
 **Trace** — find what depends on an entity before changing it:
 ```
@@ -238,6 +241,14 @@ Example:
 {behavior_ir}
 ```
 → {behavior_annotation}
+
+### Structural patterns
+
+CodeIR detects recurring structural patterns — groups of 30+ classes sharing the same base class and role. Patterns appear in bearings under "Structural Patterns" and in `show` output for pattern members.
+
+When you `show` a pattern member, the output highlights only how it **deviates** from its pattern — standard fields are labeled, not repeated. If you need the full IR, use `--full`.
+
+Use `--patterns` on search to see pattern markers (`→BaseClass`). Run `codeir patterns` for a summary of all detected patterns.
 """
 
 
