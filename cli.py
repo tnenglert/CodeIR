@@ -15,6 +15,7 @@ Commands:
   stats        — Show repository index statistics
   module-map   — Display classified module map with dependencies
   bearings     — Generate bearings.md agent orientation context file
+  patterns     — List detected structural patterns (base-class clusters ≥30 entities)
   rules        — Generate .claude/rules/CodeIR.md agent instructions with repo-specific examples
   eval         — Evaluate compression levels side-by-side
   floor-test   — Comprehensibility floor testing (generate/score)
@@ -35,6 +36,9 @@ from index.store.db import column_names, connect
 from index.store.fetch import get_entity_all_levels, get_entity_location, get_entity_with_ir
 from index.store.stats import get_stats
 
+
+# Pattern feature toggle - set to False for vanilla CodeIR testing
+PATTERNS_ENABLED = True
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
@@ -77,12 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--repo-path", type=Path, default=Path("."))
     p_search.add_argument("--limit", type=int, default=50)
     p_search.add_argument("--category", default=None, help="Filter by module category (e.g., core_logic, tests)")
+    p_search.add_argument("--patterns", action="store_true", help="Show pattern membership markers (→BaseClass)")
 
     # show
     p_show = sub.add_parser("show", help="Show entity IR")
     p_show.add_argument("entity_id")
     p_show.add_argument("--repo-path", type=Path, default=Path("."))
     p_show.add_argument("--level", default="Behavior", help="Compression level to show")
+    p_show.add_argument("--full", action="store_true", help="Show full IR (skip smart pattern view)")
 
     # expand
     p_expand = sub.add_parser("expand", help="Show raw source for an entity")
@@ -139,6 +145,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_grep.add_argument("-C", "--context", type=int, default=0, help="Show N surrounding lines per match (like grep -C)")
     p_grep.add_argument("--path", default=None, help="Scope to directory or glob (e.g., orm/ or 'engine/*.py')")
     p_grep.add_argument("-v", "--verbose", action="store_true", help="Include IR context for each entity match")
+
+    # patterns
+    p_patterns = sub.add_parser("patterns", help="List detected structural patterns")
+    p_patterns.add_argument("--repo-path", type=Path, default=Path("."))
+    p_patterns.add_argument("--category", default=None, help="Filter by category")
+    p_patterns.add_argument("--min-size", type=int, default=30, help="Minimum pattern size (default: 30)")
+    p_patterns.add_argument("--include-tests", action="store_true", help="Include test patterns")
 
     # rules
     p_rules = sub.add_parser("rules", help="Generate .claude/rules/CodeIR.md agent instructions")
@@ -275,8 +288,31 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"  IR rows: {result.get('ir_rows', 0)} (total: {result.get('total_ir_rows', 0)})")
     print(f"  Abbreviations: {result.get('abbreviations', 0)}")
     print(f"  Caller links: {result.get('caller_relationships', 0)}")
+
+    # Show ambiguous calls summary
+    ambiguous = result.get('ambiguous_calls', [])
+    if ambiguous:
+        # Group by call_name for summary
+        by_name = {}
+        for a in ambiguous:
+            name = a["call_name"]
+            by_name[name] = by_name.get(name, 0) + 1
+        top_ambiguous = sorted(by_name.items(), key=lambda x: -x[1])[:5]
+        summary = ", ".join(f"{name}({cnt})" for name, cnt in top_ambiguous)
+        print(f"  Ambiguous calls: {len(ambiguous)} ({summary})")
+
     print(f"  Level: {result.get('compression_level', 'Behavior')}")
     print(f"  Store: {result.get('store_dir', '')}")
+
+    # Run pattern detection
+    from index.pattern_detector import detect_patterns
+    db_path = repo_path / ".codeir" / "entities.db"
+    patterns = detect_patterns(db_path)
+    if patterns:
+        non_test = [p for p in patterns if not p.is_test_pattern]
+        test_pats = [p for p in patterns if p.is_test_pattern]
+        coverage = sum(p.member_count for p in non_test)
+        print(f"  Patterns: {len(non_test)} structural ({coverage} entities), {len(test_pats)} test")
 
 
 def cmd_search(args: argparse.Namespace) -> None:
@@ -289,9 +325,21 @@ def cmd_search(args: argparse.Namespace) -> None:
         query_str = " ".join(args.query)
         print(f"No entities found. Try: codeir grep \"{query_str}\" to search file contents.")
         return
+
+    # Load pattern memberships if requested and patterns are enabled
+    show_patterns = getattr(args, "patterns", False) and PATTERNS_ENABLED
+    if show_patterns:
+        from index.pattern_detector import get_entity_pattern
+        db_path = repo_path / ".codeir" / "entities.db"
+
     for r in results:
         line_info = f", ~{r['line_count']} lines" if r.get('line_count') else ""
-        print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
+        if show_patterns:
+            pattern_id = get_entity_pattern(db_path, r['entity_id'])
+            pattern_marker = f" →{pattern_id}" if pattern_id else ""
+            print(f"  {r['entity_id']:20s}{pattern_marker:15s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
+        else:
+            print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -301,11 +349,71 @@ def cmd_show(args: argparse.Namespace) -> None:
         print(f"Entity not found: {args.entity_id} (level={args.level})")
         print("Run `codeir index <repo_path>` first.")
         return
+
+    # Header
     print(f"Entity: {result['qualified_name']}  [{result['kind']}]")
     print(f"File:   {result['file_path']}:{result['line']}")
     if result.get("mode"):
         print(f"Level:  {result['mode']}")
-    print(f"\n{result['ir_text']}")
+
+    # Determine if we should use smart pattern view
+    use_smart_view = False
+    pattern_details = None
+    db_path = repo_path / ".codeir" / "entities.db"
+
+    # Check global toggle and --full flag
+    patterns_disabled = not PATTERNS_ENABLED or getattr(args, "full", False)
+
+    if args.level == "Behavior" and not patterns_disabled:
+        from index.pattern_detector import get_entity_pattern_details
+        pattern_details = get_entity_pattern_details(db_path, args.entity_id)
+        use_smart_view = pattern_details is not None
+
+    if use_smart_view and pattern_details:
+        # Smart pattern-aware view
+        cat_suffix = f" in {pattern_details.category}" if pattern_details.category else ""
+        print(f"\nPattern: {pattern_details.base_class} ({pattern_details.member_count} members{cat_suffix})")
+
+        calls_str = ", ".join(pattern_details.common_calls[:5]) if pattern_details.common_calls else "-"
+        flags_str = pattern_details.common_flags if pattern_details.common_flags else "-"
+        print(f"  Standard calls: {calls_str}")
+        print(f"  Standard flags: {flags_str}")
+
+        # Deviations
+        has_deviations = (
+            pattern_details.extra_calls or
+            pattern_details.extra_flags or
+            pattern_details.missing_calls
+        )
+        if has_deviations:
+            print(f"\nDeviations:")
+            if pattern_details.extra_calls:
+                print(f"  Extra calls: {', '.join(pattern_details.extra_calls)}")
+            if pattern_details.extra_flags:
+                print(f"  Extra flags: {pattern_details.extra_flags}")
+            if pattern_details.missing_calls:
+                print(f"  Missing calls: {', '.join(pattern_details.missing_calls)}")
+        else:
+            print(f"\nDeviations: none (fully standard)")
+
+        print(f"\nFull IR: codeir show {args.entity_id} --full")
+    else:
+        # Standard IR view (vanilla)
+        ir_text = result['ir_text']
+
+        # For Index level, add pattern marker if entity belongs to a pattern (unless patterns disabled)
+        if args.level == "Index" and not patterns_disabled:
+            from index.pattern_detector import get_entity_pattern
+            pattern_id = get_entity_pattern(db_path, args.entity_id)
+            if pattern_id:
+                # Insert pattern marker after entity ID
+                parts = ir_text.split(" ", 2)  # opcode, entity_id, rest
+                if len(parts) >= 2:
+                    ir_text = f"{parts[0]} {parts[1]} →{pattern_id}"
+                    if len(parts) > 2:
+                        ir_text += f" {parts[2]}"
+
+        print(f"\n{ir_text}")
 
 
 def cmd_expand(args: argparse.Namespace) -> None:
@@ -410,6 +518,14 @@ def cmd_callers(args: argparse.Namespace) -> None:
     conn.row_factory = sqlite3.Row
 
     try:
+        # Get entity name for ambiguity check
+        entity_row = conn.execute(
+            "SELECT name, qualified_name FROM entities WHERE id = ?",
+            [args.entity_id]
+        ).fetchone()
+        entity_name = entity_row["name"] if entity_row else args.entity_id
+
+        # Get resolved callers
         sql = """
             SELECT caller_id, caller_name, caller_file, resolution
             FROM callers
@@ -422,18 +538,56 @@ def cmd_callers(args: argparse.Namespace) -> None:
             params.append(args.resolution)
 
         sql += " ORDER BY resolution, caller_name"
-
         rows = conn.execute(sql, params).fetchall()
+
+        # Check for ambiguous calls - entities that call this name but weren't resolved
+        # Look for calls_json containing ".{name}" pattern (qualified calls)
+        ambiguous_pattern = f'%.{entity_name}"%'
+        ambiguous_sql = """
+            SELECT id, qualified_name, file_path, calls_json
+            FROM entities
+            WHERE calls_json LIKE ?
+            AND id NOT IN (SELECT caller_id FROM callers WHERE entity_id = ?)
+        """
+        ambiguous_rows = conn.execute(ambiguous_sql, [ambiguous_pattern, args.entity_id]).fetchall()
+
+        # Count how many entities share this name (for context)
+        name_count = conn.execute(
+            "SELECT COUNT(*) FROM entities WHERE name = ?", [entity_name]
+        ).fetchone()[0]
+
     finally:
         conn.close()
 
-    if not rows:
+    if not rows and not ambiguous_rows:
         print(f"No callers found for: {args.entity_id}")
         return
 
+    # Print resolved callers
     for row in rows:
         marker = "~" if row["resolution"] == "fuzzy" else " "
         print(f" {marker}{row['caller_id']:20s}  {row['caller_name']:40s}  {row['caller_file']}  [{row['resolution']}]")
+
+    # Print ambiguous callers with actionable info
+    if ambiguous_rows:
+        print(f"\n⚠ Ambiguous calls ({len(ambiguous_rows)} potential callers, {name_count} entities named '{entity_name}'):")
+        for row in ambiguous_rows[:5]:  # Show top 5
+            # Extract the matching call from calls_json
+            import json
+            try:
+                calls = json.loads(row["calls_json"])
+                matching = [c for c in calls if c.endswith(f".{entity_name}")]
+                call_str = matching[0] if matching else entity_name
+            except:
+                call_str = entity_name
+            print(f"   {row['id']:20s}  calls {call_str:30s}  {row['file_path']}")
+
+        if len(ambiguous_rows) > 5:
+            print(f"   ... and {len(ambiguous_rows) - 5} more")
+
+        print(f"\n💡 Suggestions:")
+        print(f"   codeir grep '\\.{entity_name}\\(' --path <dir>")
+        print(f"   codeir grep '{entity_name}\\(' --path <relevant_dir>")
 
 
 def cmd_impact(args: argparse.Namespace) -> None:
@@ -781,7 +935,7 @@ def _generate_bearings_files(repo_path: Path) -> None:
         by_cat.setdefault(mod["category"], []).append(mod)
 
     for category, cat_mods in by_cat.items():
-        cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids)
+        cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids, db_path=db_path)
         cat_path = bearings_dir / f"{category}.md"
         cat_path.write_text(cat_content, encoding="utf-8")
 
@@ -852,6 +1006,56 @@ def cmd_bearings(args: argparse.Namespace) -> None:
             for cat_path in cat_files:
                 cat_tokens = _estimate_tokens(cat_path)
                 print(f"  {cat_path.stem:15s}  `codeir bearings {cat_path.stem}` (~{cat_tokens:,} tokens)")
+
+
+def cmd_patterns(args: argparse.Namespace) -> None:
+    repo_path = args.repo_path.resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    from index.pattern_detector import detect_patterns, get_patterns
+
+    # Detect patterns if not already done
+    patterns = get_patterns(db_path, category=args.category, include_tests=args.include_tests)
+
+    if not patterns:
+        # Try detecting first
+        detected = detect_patterns(db_path, min_size=args.min_size)
+        patterns = [p for p in detected if args.include_tests or not p.is_test_pattern]
+        if args.category:
+            patterns = [p for p in patterns if p.category == args.category]
+
+    if not patterns:
+        print(f"No patterns found with ≥{args.min_size} members.")
+        if not args.include_tests:
+            print("Try --include-tests to see test patterns.")
+        return
+
+    # Group by category
+    by_cat: Dict[str, list] = {}
+    for p in patterns:
+        by_cat.setdefault(p.category or "uncategorized", []).append(p)
+
+    total_coverage = sum(p.member_count for p in patterns)
+
+    print(f"Structural Patterns (≥{args.min_size} members):\n")
+
+    for category in sorted(by_cat.keys()):
+        cat_patterns = sorted(by_cat[category], key=lambda p: -p.member_count)
+        cat_coverage = sum(p.member_count for p in cat_patterns)
+        print(f"{category}: ({cat_coverage} entities in {len(cat_patterns)} patterns)")
+
+        for p in cat_patterns:
+            calls_str = ", ".join(p.common_calls[:4]) if p.common_calls else "-"
+            flags_str = p.common_flags if p.common_flags else "-"
+            test_marker = " [test]" if p.is_test_pattern else ""
+            print(f"  {p.base_class:20s} {p.member_count:4d} classes   "
+                  f"calls: {calls_str:30s}  flags: {flags_str}{test_marker}")
+        print()
+
+    print(f"Total: {total_coverage} entities in {len(patterns)} patterns")
 
 
 def cmd_rules(args: argparse.Namespace) -> None:
@@ -974,6 +1178,7 @@ def main() -> None:
         "stats": cmd_stats,
         "module-map": cmd_module_map,
         "bearings": cmd_bearings,
+        "patterns": cmd_patterns,
         "rules": cmd_rules,
         "eval": cmd_eval,
         "floor-test": cmd_floor_test,

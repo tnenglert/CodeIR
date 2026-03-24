@@ -91,23 +91,29 @@ def _build_behavior(
     return " ".join(parts)
 
 
-def _build_index(entity: dict, pattern_id: str, module_category: str, module_domain: str = "") -> str:
-    """Structural tag row: entity type, ID, domain tag, category tag.
+def _build_index(entity: dict, pattern_id: str, module_category: str, module_domain: str = "",
+                 structural_pattern: str = "") -> str:
+    """Structural tag row: entity type, ID, pattern reference, domain tag, category tag.
 
-    Format: MT SEND.03 #HTTP #CORE
+    Format: MT SEND.03 →ModelSQL #HTTP #CORE
+    Pattern reference (→PatternName) appears for entities that belong to a structural pattern.
     Domain tag comes first (primary orientation signal), then category.
-
-    Note: pattern_id is kept in storage for change detection but omitted from
-    the text representation served to models (zero semantic signal for selection).
     """
     opcode = kind_to_opcode(entity["kind"])
     cat = module_category[:4].upper() if module_category else "UNKN"
     domain = module_domain.upper() if module_domain and module_domain != "unknown" else ""
 
+    parts = [opcode, entity['id']]
+
+    # Add pattern reference if entity belongs to a structural pattern
+    if structural_pattern:
+        parts.append(f"→{structural_pattern}")
+
     if domain:
-        return f"{opcode} {entity['id']} #{domain} #{cat}"
-    else:
-        return f"{opcode} {entity['id']} #{cat}"
+        parts.append(f"#{domain}")
+    parts.append(f"#{cat}")
+
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,23 @@
+{
+  "model": "example-model",
+  "responses": {
+    "A1": {
+      "tool_calls": [
+        "codeir search 'hash password'",
+        "codeir show ATHNTCT.02",
+        "codeir expand ATHNTCT.02"
+      ],
+      "answer": "Password hashing during authentication happens in BaseUserManager.authenticate (ATHNTCT.02) in fastapi_users/manager.py. The method calls self.password_helper.hash() at line 651. There's a timing attack mitigation: when a user doesn't exist, it still runs the hash function to prevent attackers from distinguishing 'user not found' from 'wrong password' based on response time.",
+      "entities_mentioned": ["ATHNTCT.02", "HASH.02"]
+    },
+    "B1": {
+      "tool_calls": [
+        "codeir search 'verify'",
+        "codeir scope VRFY",
+        "codeir show RQSTVRFY"
+      ],
+      "answer": "User verification flow: 1) request_verify is called, which generates a JWT token via generate_jwt. 2) Token is sent to user (email). 3) User clicks link, calling verify endpoint. 4) verify decodes the JWT via decode_jwt, validates the user, and calls on_after_verify callback.",
+      "entities_mentioned": ["RQSTVRFY", "VRFY", "GNRTJWT", "DCDJWT"]
+    }
+  }
+}

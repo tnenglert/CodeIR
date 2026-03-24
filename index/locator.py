@@ -53,10 +53,32 @@ class _EntityVisitor(ast.NodeVisitor):
         self._include_semantic = include_semantic
 
     def _call_name(self, node: ast.AST) -> str:
+        """Extract call name, capturing attribute chains for qualified calls.
+
+        Simple calls: foo() → "foo"
+        Attribute calls: self.helper.hash() → "helper.hash"
+        Strips 'self' and 'cls' prefixes. Returns last 2 segments max.
+        """
         if isinstance(node, ast.Name):
             return node.id
         if isinstance(node, ast.Attribute):
-            return node.attr
+            # Build attribute chain by walking up
+            parts = []
+            current = node
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+
+            # Add base name if it's not self/cls
+            if isinstance(current, ast.Name) and current.id not in ("self", "cls"):
+                parts.append(current.id)
+
+            parts.reverse()
+
+            # Return last 2 segments for qualified calls
+            if len(parts) >= 2:
+                return ".".join(parts[-2:])
+            return parts[0] if parts else ""
         return ""
 
     def _symbol_name(self, node: ast.AST) -> str:
