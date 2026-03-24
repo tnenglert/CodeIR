@@ -520,7 +520,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             mapping_conn.close()
 
     # Pass 4: Build reverse caller relationships (opens its own connection)
-    caller_count = build_callers_table(repo_path, store_paths["entities_db"])
+    caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"])
 
     # Save abbreviation maps (reopen mapping_conn since we closed it above)
     mapping_conn = connect(store_paths["mapping_db"])
@@ -541,4 +541,5 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         "abbreviations": abbrev_count,
         "compression_level": compression_level,
         "caller_relationships": caller_count,
+        "ambiguous_calls": ambiguous_calls,
     }

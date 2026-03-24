@@ -135,52 +135,101 @@ def resolve_calls_for_entity(
     import_map: Dict[str, str],
     name_to_entities: Dict[str, List[Dict]],
     qualified_to_entity: Dict[str, Dict],
-) -> List[Dict]:
+) -> Tuple[List[Dict], List[Dict]]:
     """Resolve an entity's calls to caller relationships.
 
-    Returns dicts ready for insertion into the callers table.
+    Returns:
+        (relationships, ambiguous) where:
+        - relationships: dicts ready for insertion into callers table
+        - ambiguous: dicts describing unresolved calls due to too many candidates
+
+    Qualified calls (e.g., "password_helper.hash") bypass the stoplist
+    and resolve by matching the method suffix against entity names.
     """
     relationships: List[Dict] = []
+    ambiguous: List[Dict] = []
     seen_targets: set = set()
 
     for call_name in calls:
-        if call_name in CALL_STOPLIST:
+        # Qualified calls (contain a dot) bypass stoplist
+        is_qualified = "." in call_name
+
+        if not is_qualified and call_name in CALL_STOPLIST:
             continue
 
         resolved: List[Tuple[str, str]] = []
+        candidates_for_ambiguity: List[Dict] = []
 
-        # Tier 1: Import resolution
-        if call_name in import_map:
-            qualified_source = import_map[call_name]
-            if qualified_source in qualified_to_entity:
-                target = qualified_to_entity[qualified_source]
-                resolved.append((target["entity_id"], "import"))
-            else:
-                # Try matching the bare name from the qualified import
-                # e.g. "flask.redirect" → look for entity named "redirect"
-                bare = qualified_source.rsplit(".", 1)[-1]
-                if bare in qualified_to_entity:
-                    target = qualified_to_entity[bare]
-                    resolved.append((target["entity_id"], "import"))
+        if is_qualified:
+            # For qualified calls like "password_helper.hash",
+            # extract the method name and match against entities
+            method_name = call_name.rsplit(".", 1)[-1]
 
-        # Tier 2: Same-file resolution (only if Tier 1 didn't resolve)
-        if not resolved:
+            # Try same-file resolution first
             same_file = [
-                e for e in name_to_entities.get(call_name, [])
+                e for e in name_to_entities.get(method_name, [])
                 if e["file_path"] == file_path and e["entity_id"] != entity["entity_id"]
             ]
             for target in same_file:
                 resolved.append((target["entity_id"], "local"))
 
-        # Tier 3: Fuzzy repo-wide match (only if nothing resolved above)
-        if not resolved:
-            candidates = [
-                e for e in name_to_entities.get(call_name, [])
-                if e["entity_id"] != entity["entity_id"]
-            ]
-            if 1 <= len(candidates) <= FUZZY_MATCH_LIMIT:
-                for target in candidates:
-                    resolved.append((target["entity_id"], "fuzzy"))
+            # Then fuzzy repo-wide match
+            if not resolved:
+                candidates = [
+                    e for e in name_to_entities.get(method_name, [])
+                    if e["entity_id"] != entity["entity_id"]
+                ]
+                if 1 <= len(candidates) <= FUZZY_MATCH_LIMIT:
+                    for target in candidates:
+                        resolved.append((target["entity_id"], "fuzzy"))
+                elif len(candidates) > FUZZY_MATCH_LIMIT:
+                    candidates_for_ambiguity = candidates
+        else:
+            # Unqualified call — use original resolution tiers
+
+            # Tier 1: Import resolution
+            if call_name in import_map:
+                qualified_source = import_map[call_name]
+                if qualified_source in qualified_to_entity:
+                    target = qualified_to_entity[qualified_source]
+                    resolved.append((target["entity_id"], "import"))
+                else:
+                    # Try matching the bare name from the qualified import
+                    # e.g. "flask.redirect" → look for entity named "redirect"
+                    bare = qualified_source.rsplit(".", 1)[-1]
+                    if bare in qualified_to_entity:
+                        target = qualified_to_entity[bare]
+                        resolved.append((target["entity_id"], "import"))
+
+            # Tier 2: Same-file resolution (only if Tier 1 didn't resolve)
+            if not resolved:
+                same_file = [
+                    e for e in name_to_entities.get(call_name, [])
+                    if e["file_path"] == file_path and e["entity_id"] != entity["entity_id"]
+                ]
+                for target in same_file:
+                    resolved.append((target["entity_id"], "local"))
+
+            # Tier 3: Fuzzy repo-wide match (only if nothing resolved above)
+            if not resolved:
+                candidates = [
+                    e for e in name_to_entities.get(call_name, [])
+                    if e["entity_id"] != entity["entity_id"]
+                ]
+                if 1 <= len(candidates) <= FUZZY_MATCH_LIMIT:
+                    for target in candidates:
+                        resolved.append((target["entity_id"], "fuzzy"))
+                elif len(candidates) > FUZZY_MATCH_LIMIT:
+                    candidates_for_ambiguity = candidates
+
+        # Track ambiguous calls (exceeded fuzzy limit, no other resolution)
+        if not resolved and candidates_for_ambiguity:
+            ambiguous.append({
+                "caller_id": entity["entity_id"],
+                "call_name": call_name,
+                "candidate_count": len(candidates_for_ambiguity),
+                "candidate_ids": [c["entity_id"] for c in candidates_for_ambiguity[:6]],
+            })
 
         for target_id, resolution in resolved:
             if target_id not in seen_targets:
@@ -193,7 +242,7 @@ def resolve_calls_for_entity(
                     "resolution": resolution,
                 })
 
-    return relationships
+    return relationships, ambiguous
 
 
 
@@ -201,10 +250,12 @@ def resolve_calls_for_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_callers_table(repo_path: Path, db_path: Path) -> int:
+def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]]:
     """Run caller resolution and populate the callers table.
 
-    Returns the number of caller relationships stored.
+    Returns:
+        (relationship_count, ambiguous_calls) where ambiguous_calls contains
+        unresolved calls that exceeded FUZZY_MATCH_LIMIT.
     """
     from index.store.db import _ensure_callers_table
 
@@ -232,6 +283,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> int:
 
     # 5. Resolve all caller relationships
     all_relationships: List[tuple] = []
+    all_ambiguous: List[Dict] = []
 
     for file_path_str, entities in entities_by_file.items():
         abs_path = repo_path / file_path_str
@@ -247,7 +299,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> int:
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])
 
-            relationships = resolve_calls_for_entity(
+            relationships, ambiguous = resolve_calls_for_entity(
                 entity=entity,
                 calls=calls,
                 file_path=file_path_str,
@@ -261,6 +313,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> int:
                     rel["entity_id"], rel["caller_id"],
                     rel["caller_name"], rel["caller_file"], rel["resolution"],
                 ))
+            all_ambiguous.extend(ambiguous)
 
     # 6. Batch insert all relationships
     conn.executemany(
@@ -271,4 +324,4 @@ def build_callers_table(repo_path: Path, db_path: Path) -> int:
 
     total_relationships = conn.execute("SELECT COUNT(*) FROM callers").fetchone()[0]
     conn.close()
-    return total_relationships
+    return total_relationships, all_ambiguous

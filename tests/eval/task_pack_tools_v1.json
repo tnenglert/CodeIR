@@ -1,0 +1,173 @@
+{
+  "version": "1.0",
+  "description": "CodeIR tool usage evaluation tasks",
+  "fixture": "tests/_local/testRepositories/_fastapi-users-master",
+  "tasks": [
+    {
+      "id": "A1",
+      "type": "targeted_bug",
+      "prompt": "Find where password hashing happens during authentication and identify why a timing attack mitigation exists.",
+      "ground_truth": {
+        "required_entities": ["ATHNTCT.02", "HASH.02"],
+        "required_concepts": ["timing attack", "hash"],
+        "key_file": "fastapi_users/manager.py",
+        "key_line_range": [636, 663]
+      },
+      "scoring": {
+        "found_entities": 40,
+        "mentioned_concepts": 30,
+        "identified_file": 20,
+        "explained_mechanism": 10
+      }
+    },
+    {
+      "id": "A2",
+      "type": "targeted_bug",
+      "prompt": "The reset_password function seems to accept expired tokens sometimes. Find where token expiration is checked.",
+      "ground_truth": {
+        "required_entities": ["RSTPSSWRD", "DCDJWT"],
+        "required_concepts": ["decode", "expired", "token"],
+        "key_file": "fastapi_users/manager.py",
+        "key_line_range": [386, 438]
+      },
+      "scoring": {
+        "found_entities": 40,
+        "mentioned_concepts": 30,
+        "identified_file": 20,
+        "explained_mechanism": 10
+      }
+    },
+    {
+      "id": "B1",
+      "type": "conceptual_understanding",
+      "prompt": "Explain how user verification flows through the system, from request to completion.",
+      "ground_truth": {
+        "required_entities": ["RQSTVRFY", "VRFY", "VRFY.02", "GNRTJWT", "DCDJWT"],
+        "flow_order": ["request_verify", "generate_jwt", "verify", "decode_jwt", "on_after_verify"],
+        "key_files": ["fastapi_users/manager.py", "fastapi_users/router/verify.py"]
+      },
+      "scoring": {
+        "found_entities": 30,
+        "correct_flow_order": 40,
+        "identified_entry_points": 20,
+        "identified_callbacks": 10
+      }
+    },
+    {
+      "id": "B2",
+      "type": "conceptual_understanding",
+      "prompt": "Explain the OAuth callback flow - what happens when a user returns from an OAuth provider?",
+      "ground_truth": {
+        "required_entities": ["OTHCLLBCK", "CLLBCK", "GTBYTHCCNT.02"],
+        "required_concepts": ["oauth", "callback", "account", "create", "existing"],
+        "key_files": ["fastapi_users/manager.py", "fastapi_users/router/oauth.py"]
+      },
+      "scoring": {
+        "found_entities": 30,
+        "mentioned_concepts": 30,
+        "identified_branch_logic": 30,
+        "identified_callbacks": 10
+      }
+    },
+    {
+      "id": "C1",
+      "type": "medium_refactor",
+      "prompt": "Add logging to all authentication failure points. Identify where logging statements should be added.",
+      "ground_truth": {
+        "required_entities": ["ATHNTCT.02"],
+        "failure_points": [
+          {"description": "user not found", "line": 651},
+          {"description": "password invalid", "line": 658}
+        ],
+        "key_file": "fastapi_users/manager.py"
+      },
+      "scoring": {
+        "found_primary_entity": 30,
+        "identified_failure_points": 50,
+        "suggested_log_locations": 20
+      }
+    },
+    {
+      "id": "C2",
+      "type": "medium_refactor",
+      "prompt": "Add rate limiting hooks to password reset. Identify all entry points that need modification.",
+      "ground_truth": {
+        "required_entities": ["FRGTPSSWRD", "RSTPSSWRD", "FRGTPSSWRD.02", "RSTPSSWRD.02"],
+        "entry_points": ["manager.forgot_password", "manager.reset_password", "router.forgot_password", "router.reset_password"],
+        "key_files": ["fastapi_users/manager.py", "fastapi_users/router/reset.py"]
+      },
+      "scoring": {
+        "found_manager_entities": 25,
+        "found_router_entities": 25,
+        "identified_all_entry_points": 40,
+        "understood_manager_router_split": 10
+      }
+    },
+    {
+      "id": "D1",
+      "type": "dependency_sensitive",
+      "prompt": "I want to change the signature of generate_jwt. What will break and what needs updating?",
+      "ground_truth": {
+        "required_entities": ["GNRTJWT"],
+        "direct_callers": ["WRTTKN.03", "FRGTPSSWRD", "RQSTVRFY", "GNRTSTTTKN"],
+        "affected_flows": ["verification", "password_reset", "oauth", "jwt_auth"],
+        "min_affected_count": 10
+      },
+      "scoring": {
+        "found_entity": 20,
+        "ran_impact_or_callers": 20,
+        "identified_direct_callers": 30,
+        "identified_affected_flows": 20,
+        "warned_about_scope": 10
+      }
+    },
+    {
+      "id": "D2",
+      "type": "dependency_sensitive",
+      "prompt": "I need to modify BaseUserDatabase.update to add audit logging. What code paths use this?",
+      "ground_truth": {
+        "required_entities": ["UPDT.02"],
+        "callers_pattern": "*.update",
+        "expected_ambiguity": true,
+        "workaround": "grep"
+      },
+      "scoring": {
+        "found_entity": 20,
+        "recognized_ambiguity": 30,
+        "used_grep_fallback": 30,
+        "identified_call_sites": 20
+      }
+    },
+    {
+      "id": "E1",
+      "type": "search_failure",
+      "prompt": "Find where user email uniqueness is enforced.",
+      "ground_truth": {
+        "required_entities": ["CRT.03", "GTBYML.02"],
+        "search_challenges": ["uniqueness not in name", "spread across methods"],
+        "key_pattern": "UserAlreadyExists",
+        "successful_search": ["get_by_email", "UserAlreadyExists", "create"]
+      },
+      "scoring": {
+        "found_relevant_entities": 40,
+        "identified_exception": 30,
+        "traced_enforcement_logic": 30
+      }
+    },
+    {
+      "id": "E2",
+      "type": "search_failure",
+      "prompt": "Find the password strength validation logic.",
+      "ground_truth": {
+        "required_entities": ["VLDTPSSWRD"],
+        "search_challenges": ["validate_password is a hook", "actual validation in subclass"],
+        "key_insight": "base method is empty, meant to be overridden"
+      },
+      "scoring": {
+        "found_entity": 30,
+        "recognized_hook_pattern": 40,
+        "checked_for_implementations": 30
+      }
+    }
+  ]
+}

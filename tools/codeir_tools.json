@@ -1,0 +1,365 @@
+{
+  "schema_version": "1.0",
+  "description": "CodeIR tool schemas for AI agent integration",
+  "response_shape": {
+    "description": "All tools return this structure",
+    "type": "object",
+    "properties": {
+      "data": {
+        "type": "object",
+        "description": "Tool-specific payload"
+      },
+      "meta": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "warnings": { "type": "array", "items": { "type": "string" } },
+          "suggestions": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["tool", "timestamp", "warnings", "suggestions"]
+      }
+    },
+    "required": ["data", "meta"]
+  },
+  "tools": [
+    {
+      "name": "codeir_search",
+      "description": "Find functions, classes, or entities by name or concept. Returns ranked results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name, keyword, or concept to search for"
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional category filter (e.g., core_logic, tests, schema)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results to return"
+          }
+        },
+        "required": ["query"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity_id": { "type": "string" },
+                "entity_type": { "type": "string" },
+                "name": { "type": "string" },
+                "file": { "type": "string" },
+                "line": { "type": "integer" },
+                "kind": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": true
+            }
+          },
+          "result_count": { "type": "integer" }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_show",
+      "description": "View structured behavior of an entity, including what it does and what it calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "ID of the entity from search results"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["Index", "Behavior"],
+            "description": "Level of detail. Default is Behavior."
+          }
+        },
+        "required": ["entity_id"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "ir_text": { "type": "string" },
+          "calls": { "type": "array", "items": { "type": "string" } },
+          "flags": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_expand",
+      "description": "Retrieve raw source code for an entity. Use only when verifying or editing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "ID of the entity"
+          }
+        },
+        "required": ["entity_id"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "name": { "type": "string" },
+          "file": { "type": "string" },
+          "start_line": { "type": "integer" },
+          "end_line": { "type": "integer" },
+          "source": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_callers",
+      "description": "Find entities that directly call or depend on this entity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": ["import", "local", "fuzzy"],
+            "description": "Filter by resolution type. Default includes all."
+          }
+        },
+        "required": ["entity_id"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "callers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity_id": { "type": "string" },
+                "name": { "type": "string" },
+                "file": { "type": "string" },
+                "resolution": { "type": "string" },
+                "count": { "type": "integer" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "total_callers": { "type": "integer" },
+          "ambiguous": {
+            "type": "array",
+            "description": "Calls that could not be resolved due to too many candidates",
+            "items": {
+              "type": "object",
+              "properties": {
+                "call": { "type": "string", "description": "The unresolved call pattern (e.g., '*.update')" },
+                "resolution": { "type": "string", "enum": ["ambiguous"] },
+                "candidate_count": { "type": "integer", "description": "Number of entities with this name" },
+                "potential_callers": { "type": "integer", "description": "Number of entities making this call" }
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_impact",
+      "description": "Analyze downstream impact of changing an entity via dependency traversal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "How far to traverse dependencies (default 2)"
+          }
+        },
+        "required": ["entity_id"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "depth": { "type": "integer" },
+          "affected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity_id": { "type": "string" },
+                "name": { "type": "string" },
+                "distance": { "type": "integer" },
+                "path": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": true
+            }
+          },
+          "total_affected": { "type": "integer" }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_scope",
+      "description": "Get minimal context needed to safely modify an entity (callers, callees, siblings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          }
+        },
+        "required": ["entity_id"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "callers": { "type": "array", "items": { "type": "object" } },
+          "callees": { "type": "array", "items": { "type": "object" } },
+          "siblings": { "type": "array", "items": { "type": "object" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_bearings",
+      "description": "Get a structured overview of the project and available categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Optional category to focus on (e.g., core_logic, tests)"
+          },
+          "full": {
+            "type": "boolean",
+            "description": "Return full module map (larger response)"
+          }
+        }
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string" },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "module_count": { "type": "integer" },
+                "token_estimate": { "type": "integer" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "path": { "type": "string" },
+                "category": { "type": "string" }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "codeir_grep",
+      "description": "Regex search across source files with IR context. Use only if structured search fails.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Regex pattern to search for"
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional directory or glob filter (e.g., 'orm/' or '*.py')"
+          },
+          "ignore_case": {
+            "type": "boolean",
+            "description": "Case-insensitive matching"
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "Number of surrounding lines to include"
+          }
+        },
+        "required": ["pattern"]
+      },
+      "response_data": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": { "type": "string" },
+                "line": { "type": "integer" },
+                "content": { "type": "string" },
+                "entity_id": { "type": "string" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "match_count": { "type": "integer" },
+          "file_count": { "type": "integer" }
+        },
+        "additionalProperties": true
+      }
+    }
+  ],
+  "error_format": {
+    "type": "object",
+    "properties": {
+      "data": { "type": "null" },
+      "meta": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "timestamp": { "type": "string" },
+          "warnings": { "type": "array" },
+          "suggestions": { "type": "array" }
+        }
+      },
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["code", "message"]
+      }
+    }
+  }
+}

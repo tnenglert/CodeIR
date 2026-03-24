@@ -29,8 +29,7 @@ pytest.ini
 .codeir/
 .env
 /.claude/
-/tests/
-!/tests/unit/
+/tests/_local/
 /_fastapi-users-master/
 
 # Temp files

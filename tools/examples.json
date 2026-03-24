@@ -1,0 +1,247 @@
+{
+  "description": "Example responses for each CodeIR tool",
+  "examples": {
+    "codeir_search": {
+      "input": {
+        "query": "authenticate",
+        "limit": 5
+      },
+      "output": {
+        "data": {
+          "results": [
+            {
+              "entity_id": "ATHNTCT.02",
+              "entity_type": "AMT",
+              "name": "BaseUserManager.authenticate",
+              "file": "fastapi_users/manager.py",
+              "line": 636,
+              "kind": "async_method",
+              "tags": ["#AUTH", "#CORE"]
+            },
+            {
+              "entity_id": "ATHNTCT",
+              "entity_type": "AMT",
+              "name": "Authenticator._authenticate",
+              "file": "fastapi_users/authentication/authenticator.py",
+              "line": 155,
+              "kind": "async_method",
+              "tags": ["#AUTH", "#CORE"]
+            }
+          ],
+          "result_count": 2
+        },
+        "meta": {
+          "tool": "codeir_search",
+          "timestamp": "2026-03-22T10:30:00Z",
+          "warnings": [],
+          "suggestions": ["codeir_show to inspect an entity"]
+        }
+      }
+    },
+    "codeir_show": {
+      "input": {
+        "entity_id": "ATHNTCT.02",
+        "level": "Behavior"
+      },
+      "output": {
+        "data": {
+          "entity_id": "ATHNTCT.02",
+          "name": "BaseUserManager.authenticate",
+          "kind": "async_method",
+          "file": "fastapi_users/manager.py",
+          "line": 636,
+          "ir_text": "AMT ATHNTCT.02 C=get_by_email,hash,update,verify_and_update F=AIRT A=2 #AUTH #CORE",
+          "calls": ["get_by_email", "hash", "update", "verify_and_update"],
+          "flags": "AIRT",
+          "tags": ["#AUTH", "#CORE"]
+        },
+        "meta": {
+          "tool": "codeir_show",
+          "timestamp": "2026-03-22T10:31:00Z",
+          "warnings": [],
+          "suggestions": ["codeir_expand for source", "codeir_callers for dependencies"]
+        }
+      }
+    },
+    "codeir_expand": {
+      "input": {
+        "entity_id": "ATHNTCT.02"
+      },
+      "output": {
+        "data": {
+          "entity_id": "ATHNTCT.02",
+          "name": "BaseUserManager.authenticate",
+          "file": "fastapi_users/manager.py",
+          "start_line": 636,
+          "end_line": 663,
+          "source": "async def authenticate(\n    self, credentials: OAuth2PasswordRequestForm\n) -> Optional[models.UP]:\n    try:\n        user = await self.get_by_email(credentials.username)\n    except exceptions.UserNotExists:\n        self.password_helper.hash(credentials.password)\n        return None\n    ..."
+        },
+        "meta": {
+          "tool": "codeir_expand",
+          "timestamp": "2026-03-22T10:32:00Z",
+          "warnings": ["Expanded source without prior dependency check"],
+          "suggestions": ["codeir_callers to check dependencies before editing"]
+        }
+      }
+    },
+    "codeir_callers": {
+      "input": {
+        "entity_id": "UPDT.03"
+      },
+      "output": {
+        "data": {
+          "entity_id": "UPDT.03",
+          "callers": [
+            {
+              "entity_id": "BSSRMNGR",
+              "name": "BaseUserManager",
+              "file": "fastapi_users/manager.py",
+              "resolution": "local",
+              "count": 1
+            },
+            {
+              "entity_id": "UPDT.04",
+              "name": "BaseUserManager._update",
+              "file": "fastapi_users/manager.py",
+              "resolution": "local",
+              "count": 1
+            }
+          ],
+          "total_callers": 3,
+          "ambiguous": [
+            {
+              "call": "*.update",
+              "resolution": "ambiguous",
+              "candidate_count": 6,
+              "potential_callers": 12
+            }
+          ]
+        },
+        "meta": {
+          "tool": "codeir_callers",
+          "timestamp": "2026-03-22T10:33:00Z",
+          "warnings": ["Call to 'update' has 6 possible targets; 12 potential callers unresolved"],
+          "suggestions": ["codeir_grep '\\.update\\(' to find actual callers", "codeir_impact for full dependency analysis"]
+        }
+      }
+    },
+    "codeir_impact": {
+      "input": {
+        "entity_id": "ATHNTCT.02",
+        "depth": 2
+      },
+      "output": {
+        "data": {
+          "entity_id": "ATHNTCT.02",
+          "depth": 2,
+          "affected": [
+            {
+              "entity_id": "LGNTST.04",
+              "name": "get_auth_router.login",
+              "distance": 1,
+              "path": ["ATHNTCT.02", "LGNTST.04"]
+            },
+            {
+              "entity_id": "THRTR",
+              "name": "get_auth_router",
+              "distance": 2,
+              "path": ["ATHNTCT.02", "LGNTST.04", "THRTR"]
+            }
+          ],
+          "total_affected": 12
+        },
+        "meta": {
+          "tool": "codeir_impact",
+          "timestamp": "2026-03-22T10:34:00Z",
+          "warnings": [],
+          "suggestions": ["codeir_scope for edit context"]
+        }
+      }
+    },
+    "codeir_scope": {
+      "input": {
+        "entity_id": "ATHNTCT.02"
+      },
+      "output": {
+        "data": {
+          "entity_id": "ATHNTCT.02",
+          "callers": [
+            {"entity_id": "LGNTST.04", "name": "login", "file": "router/auth.py"}
+          ],
+          "callees": [
+            {"entity_id": "GTBYML", "name": "get_by_email"},
+            {"entity_id": "VRFYNDPDT.02", "name": "verify_and_update"}
+          ],
+          "siblings": [
+            {"entity_id": "CRT.03", "name": "create"},
+            {"entity_id": "VRFY", "name": "verify"}
+          ]
+        },
+        "meta": {
+          "tool": "codeir_scope",
+          "timestamp": "2026-03-22T10:35:00Z",
+          "warnings": [],
+          "suggestions": ["codeir_expand when ready to edit"]
+        }
+      }
+    },
+    "codeir_bearings": {
+      "input": {
+        "category": "core_logic"
+      },
+      "output": {
+        "data": {
+          "summary": "fastapi-users: Authentication and user management framework",
+          "categories": [
+            {"name": "core_logic", "module_count": 8, "token_estimate": 450},
+            {"name": "router", "module_count": 5, "token_estimate": 280},
+            {"name": "schema", "module_count": 3, "token_estimate": 120}
+          ],
+          "modules": [
+            {"id": "MNGR", "path": "fastapi_users/manager.py", "category": "core_logic", "entity_count": 24},
+            {"id": "ATHNTCTR", "path": "fastapi_users/authentication/authenticator.py", "category": "core_logic", "entity_count": 12}
+          ]
+        },
+        "meta": {
+          "tool": "codeir_bearings",
+          "timestamp": "2026-03-22T10:36:00Z",
+          "warnings": [],
+          "suggestions": ["codeir_search to find specific entities"]
+        }
+      }
+    },
+    "codeir_grep": {
+      "input": {
+        "pattern": "async def.*authenticate",
+        "path": "fastapi_users/",
+        "ignore_case": true
+      },
+      "output": {
+        "data": {
+          "matches": [
+            {
+              "file": "fastapi_users/manager.py",
+              "line": 636,
+              "content": "    async def authenticate(",
+              "entity_id": "ATHNTCT.02"
+            },
+            {
+              "file": "fastapi_users/authentication/authenticator.py",
+              "line": 155,
+              "content": "    async def _authenticate(",
+              "entity_id": "ATHNTCT"
+            }
+          ],
+          "match_count": 2,
+          "file_count": 2
+        },
+        "meta": {
+          "tool": "codeir_grep",
+          "timestamp": "2026-03-22T10:37:00Z",
+          "warnings": ["grep is a fallback — prefer codeir_search for structured queries"],
+          "suggestions": ["codeir_search for semantic search"]
+        }
+      }
+    }
+  }
+}

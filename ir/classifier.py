@@ -625,8 +625,17 @@ def generate_category_file(
     repo_name: str, category: str,
     cat_modules: List[Dict[str, object]],
     module_ids: Dict[str, str],
+    db_path: Optional[Path] = None,
 ) -> str:
-    """Tier 3: bearings/{category}.md — full uncollapsed detail for one category."""
+    """Tier 3: bearings/{category}.md — full uncollapsed detail for one category.
+
+    Args:
+        repo_name: Repository name for header
+        category: Category name
+        cat_modules: List of modules in this category
+        module_ids: Mapping from file_path to module ID
+        db_path: Optional path to entities.db for pattern lookup
+    """
     cat_mods = sorted(cat_modules, key=lambda m: str(m["file_path"]))
     cat_entities = sum(int(m.get("entity_count", 0)) for m in cat_mods)
 
@@ -635,6 +644,15 @@ def generate_category_file(
     lines.append("")
     lines.append(f"Files: {len(cat_mods)} | Entities: {cat_entities}")
     lines.append("")
+
+    # Add pattern summary if available
+    if db_path and db_path.exists():
+        pattern_summary = _get_pattern_summary_for_category(db_path, category, cat_entities)
+        if pattern_summary:
+            lines.append(pattern_summary)
+            lines.append("")
+
+    lines.append("### Modules")
     lines.append("```")
     for mod in cat_mods:
         mid = module_ids.get(str(mod["file_path"]), "MD_UNKN")
@@ -646,4 +664,38 @@ def generate_category_file(
         ))
     lines.append("```")
     lines.append("")
+    return "\n".join(lines)
+
+
+def _get_pattern_summary_for_category(db_path: Path, category: str, total_entities: int) -> Optional[str]:
+    """Generate pattern summary block for a category."""
+    try:
+        from index.pattern_detector import get_patterns
+    except ImportError:
+        return None
+
+    patterns = get_patterns(db_path, category=category)
+    if not patterns:
+        return None
+
+    is_test = category.lower() in ("tests", "test", "testing")
+
+    if is_test:
+        # Compact format for test patterns
+        pattern_list = ", ".join(f"{p.base_class} ({p.member_count})" for p in patterns)
+        return f"**Patterns:** {pattern_list}"
+
+    # Full format for non-test patterns
+    lines = ["### Structural Patterns"]
+
+    total_in_patterns = sum(p.member_count for p in patterns)
+
+    for p in patterns:
+        calls_str = ", ".join(p.common_calls[:5]) if p.common_calls else "-"
+        flags_str = p.common_flags if p.common_flags else "-"
+        lines.append(f"- **{p.base_class}** ({p.member_count} classes): Calls: {calls_str}. Flags: {flags_str}.")
+
+    if total_entities > 0:
+        lines.append(f"\n→ {total_in_patterns} of {total_entities} entities follow known patterns.")
+
     return "\n".join(lines)
