@@ -239,6 +239,8 @@ Output from `callers`, `impact`, and `scope` includes inline triage metadata:
 - `→Pattern` — pattern membership (e.g., `→ModelSQL` means standard infrastructure)
 - `[kind, ~N lines]` — entity type and size
 
+Results are **smart-sorted** (high-caller core logic first, zero-caller tests last) and **truncated to 15** by default. Use `--all` to see the complete list when needed.
+
 Use this to triage without additional `show` calls: high caller count = infrastructure, pattern member = standard implementation, test file + 0 callers = skip unless specifically needed.
 
 ### Reading compressed representations

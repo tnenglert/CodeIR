@@ -40,6 +40,11 @@ from index.store.stats import get_stats
 # Pattern feature toggle - set to False for vanilla CodeIR testing
 PATTERNS_ENABLED = True
 
+# Default truncation limit for entity lists (callers, impact, scope)
+# Override with CODEIR_LIST_LIMIT environment variable
+import os
+DEFAULT_LIST_LIMIT = int(os.environ.get("CODEIR_LIST_LIMIT", "15"))
+
 
 def get_entity_annotations(conn: sqlite3.Connection, entity_ids: list) -> Dict[str, Dict]:
     """Fetch annotation metadata for a list of entity IDs.
@@ -139,6 +144,75 @@ def format_annotated_entity(
     return line
 
 
+def _entity_sort_key(entity_id: str, file_path: str, annotations: Dict[str, Dict]) -> tuple:
+    """Compute sort key for smart truncation.
+
+    Priority order (lower = better):
+    1. Core logic before tests (tier 0 vs 1)
+    2. High caller-count before zero-caller (within tier)
+    3. Pattern outliers before standard pattern members
+    4. File path for consistency within same priority
+
+    Returns tuple for sorting: (is_test, -caller_count, is_pattern_member, file_path)
+    """
+    ann = annotations.get(entity_id, {})
+    caller_count = ann.get("caller_count", 0)
+    pattern_base = ann.get("pattern_base")
+
+    # Tier 0: core logic, Tier 1: tests
+    is_test = 1 if ("test" in file_path.lower() or "/tests/" in file_path.lower()) else 0
+
+    # Higher caller count = more important (negate for ascending sort)
+    neg_caller_count = -caller_count
+
+    # Pattern members are standard/predictable, outliers are more interesting
+    is_pattern_member = 1 if pattern_base else 0
+
+    return (is_test, neg_caller_count, is_pattern_member, file_path)
+
+
+def smart_truncate_entities(
+    entities: list,
+    annotations: Dict[str, Dict],
+    limit: int = DEFAULT_LIST_LIMIT,
+    show_all: bool = False,
+    entity_id_key: str = "entity_id",
+    file_path_key: str = "file_path",
+) -> tuple:
+    """Sort entities by priority and truncate to limit.
+
+    Args:
+        entities: List of entity dicts
+        annotations: Annotation dict from get_entity_annotations
+        limit: Max entities to return (ignored if show_all=True)
+        show_all: If True, return all entities (no truncation)
+        entity_id_key: Key to extract entity_id from each entity dict
+        file_path_key: Key to extract file_path from each entity dict
+
+    Returns:
+        (sorted_entities, total_count, was_truncated)
+    """
+    if not entities:
+        return [], 0, False
+
+    total = len(entities)
+
+    # Sort by priority
+    sorted_entities = sorted(
+        entities,
+        key=lambda e: _entity_sort_key(
+            e.get(entity_id_key, ""),
+            e.get(file_path_key, ""),
+            annotations
+        )
+    )
+
+    if show_all or total <= limit:
+        return sorted_entities, total, False
+
+    return sorted_entities[:limit], total, True
+
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
     "extensions": [".py"],
@@ -221,6 +295,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_callers.add_argument("--repo-path", type=Path, default=Path("."))
     p_callers.add_argument("--resolution", default=None,
                            help="Filter by resolution type: import, local, fuzzy")
+    p_callers.add_argument("--all", action="store_true", dest="show_all",
+                           help="Show all callers (no truncation)")
 
     # impact
     p_impact = sub.add_parser("impact", help="Reverse dependency analysis — what breaks if this changes")
@@ -228,12 +304,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_impact.add_argument("--repo-path", type=Path, default=Path("."))
     p_impact.add_argument("--depth", type=int, default=2, help="Max traversal depth (default: 2)")
     p_impact.add_argument("--level", default="Behavior", help="IR level to show (default: Behavior)")
+    p_impact.add_argument("--all", action="store_true", dest="show_all",
+                           help="Show all affected entities (no truncation)")
 
     # scope
     p_scope = sub.add_parser("scope", help="Minimal context needed to safely modify an entity")
     p_scope.add_argument("entity_id")
     p_scope.add_argument("--repo-path", type=Path, default=Path("."))
     p_scope.add_argument("--level", default="Behavior", help="IR level to show (default: Behavior)")
+    p_scope.add_argument("--all", action="store_true", dest="show_all",
+                           help="Show all related entities (no truncation)")
 
     # grep
     p_grep = sub.add_parser("grep", help="Grep source files with IR context")
@@ -699,18 +779,42 @@ def cmd_callers(args: argparse.Namespace) -> None:
         print(f"No callers found for: {args.entity_id}")
         return
 
+    # Convert to list of dicts for sorting
+    caller_list = [
+        {
+            "entity_id": row["caller_id"],
+            "file_path": row["caller_file"],
+            "resolution": row["resolution"],
+        }
+        for row in rows
+    ]
+
+    # Smart sort and truncate
+    show_all = getattr(args, "show_all", False)
+    sorted_callers, total, was_truncated = smart_truncate_entities(
+        caller_list, annotations, show_all=show_all
+    )
+
     # Print header
-    print(f"Callers of {args.entity_id} ({len(rows)} callers):")
+    if was_truncated:
+        print(f"Callers of {args.entity_id} (showing {len(sorted_callers)} of {total}):")
+    else:
+        print(f"Callers of {args.entity_id} ({total} callers):")
 
     # Print resolved callers with annotations
-    for row in rows:
-        marker = "~" if row["resolution"] == "fuzzy" else " "
+    for caller in sorted_callers:
+        marker = "~" if caller["resolution"] == "fuzzy" else " "
         print(format_annotated_entity(
-            entity_id=row["caller_id"],
-            file_path=row["caller_file"],
+            entity_id=caller["entity_id"],
+            file_path=caller["file_path"],
             annotations=annotations,
             marker=marker,
         ))
+
+    # Print truncation notice
+    if was_truncated:
+        remaining = total - len(sorted_callers)
+        print(f"\n  ... and {remaining} more — run `codeir callers {args.entity_id} --all` for complete list")
 
     # Print ambiguous callers with actionable info
     if ambiguous_rows:
@@ -777,11 +881,26 @@ def cmd_impact(args: argparse.Namespace) -> None:
         print(f"Categories: {', '.join(sorted(result['affected_categories']))}")
     print()
 
+    show_all = getattr(args, "show_all", False)
+    any_truncated = False
+
     for depth in sorted(impact_by_depth.keys()):
         items = impact_by_depth[depth]
+
+        # Smart sort and truncate each depth level
+        sorted_items, total, was_truncated = smart_truncate_entities(
+            items, annotations, show_all=show_all
+        )
+        if was_truncated:
+            any_truncated = True
+
         label = "direct" if depth == 1 else f"depth {depth}"
-        print(f"--- {label} ({len(items)} entities) ---")
-        for item in sorted(items, key=lambda x: (x["file_path"], x["qualified_name"])):
+        if was_truncated:
+            print(f"--- {label} (showing {len(sorted_items)} of {total}) ---")
+        else:
+            print(f"--- {label} ({total} entities) ---")
+
+        for item in sorted_items:
             marker = "~" if item["resolution"] == "fuzzy" else " "
             print(format_annotated_entity(
                 entity_id=item["entity_id"],
@@ -791,7 +910,14 @@ def cmd_impact(args: argparse.Namespace) -> None:
             ))
             if depth > 1:
                 print(f"  {'':20s}  via: {item['via']}")
+
+        if was_truncated:
+            remaining = total - len(sorted_items)
+            print(f"  ... and {remaining} more at this depth")
         print()
+
+    if any_truncated:
+        print(f"Run `codeir impact {args.entity_id} --all` for complete list")
 
 
 def cmd_scope(args: argparse.Namespace) -> None:
@@ -826,11 +952,27 @@ def cmd_scope(args: argparse.Namespace) -> None:
         print(f"IR:   {root['ir_text']}")
     print()
 
-    def _print_group(label: str, items: list) -> None:
+    show_all = getattr(args, "show_all", False)
+    any_truncated = False
+
+    def _print_group(label: str, items: list) -> bool:
+        """Print a group with smart truncation. Returns True if truncated."""
+        nonlocal any_truncated
         if not items:
-            return
-        print(f"--- {label} ({len(items)}) ---")
-        for item in items:
+            return False
+
+        sorted_items, total, was_truncated = smart_truncate_entities(
+            items, annotations, show_all=show_all
+        )
+        if was_truncated:
+            any_truncated = True
+
+        if was_truncated:
+            print(f"--- {label} (showing {len(sorted_items)} of {total}) ---")
+        else:
+            print(f"--- {label} ({total}) ---")
+
+        for item in sorted_items:
             marker = "~" if item.get("resolution") == "fuzzy" else " "
             print(format_annotated_entity(
                 entity_id=item["entity_id"],
@@ -838,7 +980,12 @@ def cmd_scope(args: argparse.Namespace) -> None:
                 annotations=annotations,
                 marker=marker,
             ))
+
+        if was_truncated:
+            remaining = total - len(sorted_items)
+            print(f"  ... and {remaining} more")
         print()
+        return was_truncated
 
     _print_group("callers (what calls this)", result["callers"])
     _print_group("callees (what this calls)", result["callees"])
@@ -849,6 +996,8 @@ def cmd_scope(args: argparse.Namespace) -> None:
         print("No related entities found.")
     else:
         print(f"Total: {total} entities in scope")
+        if any_truncated:
+            print(f"Run `codeir scope {args.entity_id} --all` for complete list")
 
 
 def _print_matches(matches: list) -> None:
