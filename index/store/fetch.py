@@ -129,6 +129,53 @@ def get_entity_location(repo_path: Path, entity_id: str) -> Optional[Dict[str, o
     }
 
 
+def get_entities_by_pattern(repo_path: Path, pattern: str) -> List[Dict[str, object]]:
+    """Fetch entity locations matching a wildcard pattern (e.g., 'STEM.*').
+
+    Supports:
+      - Exact match: 'ENTITY_ID'
+      - Stem wildcard: 'STEM.*' matches all entities starting with 'STEM.'
+
+    Returns list of entity location dicts, sorted by entity_id.
+    """
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        raise FileNotFoundError(f"entities DB not found: {db_path}")
+
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    if pattern.endswith(".*"):
+        # Stem wildcard: STEM.* matches STEM, STEM.01, STEM.02, etc.
+        stem = pattern[:-2]  # Remove '.*'
+        rows = conn.execute(
+            "SELECT id AS entity_id, qualified_name, file_path, start_line, end_line, kind "
+            "FROM entities WHERE id = ? OR id LIKE ? ORDER BY id",
+            (stem, f"{stem}.%"),
+        ).fetchall()
+    else:
+        # Exact match
+        rows = conn.execute(
+            "SELECT id AS entity_id, qualified_name, file_path, start_line, end_line, kind "
+            "FROM entities WHERE id = ? LIMIT 1",
+            (pattern,),
+        ).fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "entity_id": row["entity_id"],
+            "qualified_name": row["qualified_name"],
+            "file_path": row["file_path"],
+            "start_line": row["start_line"],
+            "end_line": row["end_line"],
+            "kind": row["kind"],
+        }
+        for row in rows
+    ]
+
+
 def load_entity_ir_rows(
     repo_path: Path,
     level: Optional[str] = None,
