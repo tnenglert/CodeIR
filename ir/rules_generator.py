@@ -245,13 +245,7 @@ Use this to triage without additional `show` calls: high caller count = infrastr
 
 ### Reading compressed representations
 
-Behavior fields:
-- `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
-- `C=` — calls made
-- `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
-- `A=` — assignment count
-- `B=` — base class
-- `#TAG` — domain and category (e.g., `#DB #CORE`)
+Type opcodes: `FN`=function, `CLS`=class, `MT`=method, `AMT`=async method. Field legend is shown inline with `show` output.
 
 Example:
 ```
