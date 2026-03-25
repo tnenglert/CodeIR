@@ -237,9 +237,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # init
-    p_init = sub.add_parser("init", help="Full setup: index + bearings + rules")
-    p_init.add_argument("repo_path", type=Path)
+    p_init = sub.add_parser("init", help="Full setup: index + bearings + platform instructions")
+    p_init.add_argument("repo_path", type=Path, nargs="?", default=None,
+                        help="Repository path (default: auto-detect from cwd)")
     p_init.add_argument("--level", default=None, help="Compression level (default: Behavior+Index)")
+    p_init.add_argument("--platform", choices=["claude", "codex", "openclaw", "all"],
+                        default=None, help="Target platform (default: auto-detect)")
+    p_init.add_argument("--list", action="store_true", dest="list_only",
+                        help="Show what would be generated without writing files")
+    p_init.add_argument("--force", action="store_true",
+                        help="Overwrite existing instruction files")
+    p_init.add_argument("--skip-index", action="store_true",
+                        help="Skip indexing, only generate bearings and instructions")
 
     # index
     p_index = sub.add_parser("index", help="Index a repository")
@@ -369,23 +378,59 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 def cmd_init(args: argparse.Namespace) -> None:
-    """Full setup: index a repository, then generate bearings and rules."""
-    repo_path = args.repo_path.resolve()
-    cfg = load_config(repo_path)
-    if args.level:
-        cfg["compression_level"] = args.level
+    """Full setup: index a repository, then generate bearings and platform instructions."""
+    from ir.init import (
+        find_repo_root, detect_platforms, get_platform_by_name,
+        generate_instructions, print_detection_help, ALL_PLATFORMS,
+    )
 
-    # 1. Index
-    print(f"Indexing {repo_path} ...")
-    result = index_repo(repo_path, cfg)
-    if result.get("status") == "no_changes":
-        print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+    # Resolve repo path (auto-detect if not provided)
+    if args.repo_path:
+        repo_path = args.repo_path.resolve()
     else:
-        print(f"  {result.get('total_entities', 0)} entities, "
-              f"{result.get('files_changed', 0)} files changed")
+        repo_path = find_repo_root()
+
+    # Determine target platforms
+    if args.platform == "all":
+        platforms = ALL_PLATFORMS
+    elif args.platform:
+        p = get_platform_by_name(args.platform)
+        platforms = [p] if p else []
+    else:
+        platforms = detect_platforms(repo_path)
+
+    # If --list only, just show what would be generated and exit
+    if args.list_only:
+        if not platforms:
+            print_detection_help()
+            return
+        results = generate_instructions(repo_path, platforms, dry_run=True)
+        for platform, path, status in results:
+            rel = path.relative_to(repo_path)
+            action = "create" if status == "would_create" else "overwrite"
+            print(f"  -> {platform.display_name:12s} -> {rel}  (would {action})")
+        return
+
+    # 1. Index (unless --skip-index)
+    if not args.skip_index:
+        cfg = load_config(repo_path)
+        if args.level:
+            cfg["compression_level"] = args.level
+
+        print(f"Indexing {repo_path} ...")
+        result = index_repo(repo_path, cfg)
+        if result.get("status") == "no_changes":
+            print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+        else:
+            print(f"  {result.get('total_entities', 0)} entities, "
+                  f"{result.get('files_changed', 0)} files changed")
 
     # 2. Bearings
     db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("Error: No index found. Run without --skip-index first.")
+        return
+
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -429,16 +474,21 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     print(f"  Bearings: {len(modules)} modules, {total} entities")
 
-    # 3. Rules
-    from ir.rules_generator import generate_rules_file
-    try:
-        rules_content = generate_rules_file(repo_path)
-        rules_path = repo_path / ".claude" / "rules" / "CodeIR.md"
-        rules_path.parent.mkdir(parents=True, exist_ok=True)
-        rules_path.write_text(rules_content, encoding="utf-8")
-        print(f"  Rules:    {rules_path}")
-    except ValueError as exc:
-        print(f"Warning: could not generate rules: {exc}")
+    # 3. Platform instructions
+    if not platforms:
+        # No platforms detected — create .claude dir for Claude Code as default
+        from ir.init import ClaudeCode
+        platforms = [ClaudeCode()]
+        claude_dir.mkdir(parents=True, exist_ok=True)
+
+    results = generate_instructions(repo_path, platforms, dry_run=False, force=args.force)
+
+    for platform, path, status in results:
+        rel = path.relative_to(repo_path)
+        if status == "created":
+            print(f"  {platform.display_name:12s} -> {rel}")
+        elif status == "exists":
+            print(f"  {platform.display_name:12s} -> {rel}  (exists, use --force to overwrite)")
 
     print("Done.")
 
