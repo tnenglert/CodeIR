@@ -593,7 +593,11 @@ def cmd_show(args: argparse.Namespace) -> None:
                     if len(parts) > 2:
                         ir_text += f" {parts[2]}"
 
-        print(f"\n{ir_text}")
+        # Inline legend for Behavior level
+        if args.level == "Behavior":
+            print(f"\n[C=calls F=flags(R=returns,E=raises,I=if,L=loop,T=try,W=with) A=assigns B=base]")
+
+        print(f"{ir_text}")
 
 
 def cmd_expand(args: argparse.Namespace) -> None:
