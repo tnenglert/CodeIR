@@ -574,8 +574,8 @@ def generate_summary(
         lines.append(f"- **{category}**: {len(cat_mods)} files, {cat_entities} entities ({nonzero} non-empty)")
 
     lines.append("")
-    lines.append("Full module map: `.claude/bearings.md`")
-    lines.append("Per-category detail: `.claude/bearings/{category}.md`")
+    lines.append("Full module map: `.codeir/bearings.md`")
+    lines.append("Per-category detail: `.codeir/bearings/{category}.md`")
     lines.append("")
     return "\n".join(lines)
 

@@ -29,7 +29,7 @@ def get_entity_with_ir(
 
     if has_mode:
         row = conn.execute(
-            "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.kind, "
+            "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.end_line, e.kind, "
             "e.module_id, e.complexity_class, r.ir_text, r.mode "
             "FROM entities AS e JOIN ir_rows AS r ON r.entity_id = e.id "
             "WHERE e.id = ? AND r.mode = ? LIMIT 1",
@@ -37,7 +37,7 @@ def get_entity_with_ir(
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.kind, "
+            "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.end_line, e.kind, "
             "r.ir_text "
             "FROM entities AS e JOIN ir_rows AS r ON r.entity_id = e.id "
             "WHERE e.id = ? LIMIT 1",
@@ -52,6 +52,8 @@ def get_entity_with_ir(
         "entity_id": row["entity_id"],
         "qualified_name": row["qualified_name"],
         "file_path": row["file_path"],
+        "start_line": row["start_line"],
+        "end_line": row["end_line"],
         "line": row["start_line"],
         "kind": row["kind"],
         "ir_text": row["ir_text"],
