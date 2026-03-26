@@ -40,13 +40,16 @@ After `bearings`, prefer `--category` to narrow to the most likely area.
 
 **Grep** — regex search across source, grouped by entity:
 ```
-codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
+codeir grep <pattern> [--path <dir_or_glob>] [--path <dir_or_glob>] [-i] [-C N] [-v]
 codeir grep <pattern> --evidence [--path <dir_or_glob>] [-i]
+codeir grep <pattern> --count [--path <dir_or_glob>] [--path <dir_or_glob>]
 ```
 Use this for census/pattern tasks where you need all occurrences, but want
 entity context alongside matches.
 Use `--evidence` instead of `rg -n ...` followed by `sed -n ...` when you
 want exact matching lines, nearby context, and the owning entity in one call.
+Use `--count` instead of `rg ... | wc -l` or `cut | sort | uniq -c` when you
+need grouped counts by entity/file without printing the match lines.
 
 **Inspect** — compact behavior snapshots for one or more entities:
 ```
@@ -125,6 +128,8 @@ across the repo.
 Prefer `codeir grep` over raw text grep when entity ownership matters.
 Prefer `codeir grep --evidence` over `rg -n ...` then `sed -n ...` when you
 want exact lines and nearby proof without a separate source-read step.
+Use repeated `--path` flags instead of shell loops when you need one census
+across `lib`, `test`, `examples`, or `docs`.
 
 **Trace mode** — path questions
 

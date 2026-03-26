@@ -318,6 +318,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_impact.add_argument("--repo-path", type=Path, default=Path("."))
     p_impact.add_argument("--depth", type=int, default=2, help="Max traversal depth (default: 2)")
     p_impact.add_argument("--level", default="Behavior", help="IR level to show (default: Behavior)")
+    p_impact.add_argument(
+        "--exclude-area",
+        action="append",
+        choices=["lib", "test", "tests", "examples", "docs", "other"],
+        help="Exclude impacted entities in the given area (repeatable)",
+    )
     p_impact.add_argument("--all", action="store_true", dest="show_all",
                            help="Show all affected entities (no truncation)")
 
@@ -346,8 +352,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_grep.add_argument("--limit", type=int, default=50, help="Max result groups (default: 50)")
     p_grep.add_argument("-i", "--ignore-case", action="store_true", help="Case-insensitive matching")
     p_grep.add_argument("-C", "--context", type=int, default=0, help="Show N surrounding lines per match (like grep -C)")
-    p_grep.add_argument("--path", default=None, help="Scope to directory or glob (e.g., orm/ or 'engine/*.py')")
+    p_grep.add_argument(
+        "--path",
+        action="append",
+        default=None,
+        help="Scope to directory or glob (repeatable, e.g., --path orm/ --path tests/)",
+    )
     p_grep.add_argument("-v", "--verbose", action="store_true", help="Include IR context for each entity match")
+    p_grep.add_argument(
+        "--count",
+        action="store_true",
+        help="Show match counts only, grouped by entity/file and sorted by count",
+    )
     p_grep.add_argument(
         "--evidence",
         action="store_true",
@@ -1006,14 +1022,59 @@ def cmd_impact(args: argparse.Namespace) -> None:
         print(f"IR:   {root['ir_text']}")
     print()
 
+    excluded_areas = {
+        ("test" if area == "tests" else area)
+        for area in (getattr(args, "exclude_area", None) or [])
+    }
+    if excluded_areas:
+        filtered_by_depth = {}
+        for depth, items in impact_by_depth.items():
+            kept = [item for item in items if _area_for_path(item["file_path"]) not in excluded_areas]
+            if kept:
+                filtered_by_depth[depth] = kept
+        impact_by_depth = filtered_by_depth
+
     total_affected = sum(len(items) for items in impact_by_depth.values())
     if total_affected == 0:
-        print("No downstream dependents found.")
+        if excluded_areas:
+            print(f"All downstream dependents were excluded by area filter: {', '.join(sorted(excluded_areas))}")
+        else:
+            print("No downstream dependents found.")
         return
 
-    print(f"Affected: {total_affected} entities across {len(result['affected_files'])} files")
-    if result["affected_categories"]:
-        print(f"Categories: {', '.join(sorted(result['affected_categories']))}")
+    area_counts: Dict[str, int] = {}
+    category_counts: Dict[str, int] = {}
+    file_counts: Dict[str, int] = {}
+    for items in impact_by_depth.values():
+        for item in items:
+            area = _area_for_path(item["file_path"])
+            area_counts[area] = area_counts.get(area, 0) + 1
+            file_counts[item["file_path"]] = file_counts.get(item["file_path"], 0) + 1
+            category = item.get("category")
+            if category:
+                category_counts[category] = category_counts.get(category, 0) + 1
+
+    print(f"Affected: {total_affected} entities across {len(file_counts)} files")
+    depth_summary = ", ".join(f"d{depth}={len(items)}" for depth, items in sorted(impact_by_depth.items()))
+    if depth_summary:
+        print(f"By depth: {depth_summary}")
+    if area_counts:
+        area_summary = " ".join(
+            f"{area}={count}" for area, count in sorted(area_counts.items(), key=lambda kv: (kv[0] != 'lib', kv[0]))
+        )
+        print(f"By area: {area_summary}")
+    if category_counts:
+        category_summary = " ".join(
+            f"{cat}={count}" for cat, count in sorted(category_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+        )
+        print(f"By category: {category_summary}")
+    if file_counts:
+        top_files = ", ".join(
+            f"{path}={count}" for path, count in sorted(file_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        )
+        print(f"Top files: {top_files}")
+    if excluded_areas:
+        print(f"Excluded areas: {', '.join(sorted(excluded_areas))}")
     print()
 
     show_all = getattr(args, "show_all", False)
@@ -1310,6 +1371,19 @@ def _print_matches(matches: list, max_matches: int | None = None) -> int:
     return len(matches)
 
 
+def _area_for_path(file_path: str) -> str:
+    normalized = (file_path or "").lstrip("./")
+    if normalized.startswith("lib/"):
+        return "lib"
+    if normalized.startswith("test/") or normalized.startswith("tests/"):
+        return "test"
+    if normalized.startswith("examples/"):
+        return "examples"
+    if normalized.startswith("doc/") or normalized.startswith("docs/"):
+        return "docs"
+    return "other"
+
+
 def cmd_grep(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
     evidence = getattr(args, "evidence", False)
@@ -1338,10 +1412,27 @@ def cmd_grep(args: argparse.Namespace) -> None:
     total_matches = sum(len(r["matches"]) for r in results)
     entity_groups = sum(1 for r in results if r["type"] == "entity")
     file_groups = sum(1 for r in results if r["type"] == "file")
+    count_only = getattr(args, "count", False)
     print(f"{total_matches} matches across {entity_groups} entities and {file_groups} unmatched regions\n")
 
     verbose = getattr(args, "verbose", False) or evidence
     max_matches = 3 if evidence else None
+    if count_only:
+        sorted_results = sorted(
+            results,
+            key=lambda group: (-len(group["matches"]), group.get("file_path", ""), group.get("entity_id", "")),
+        )
+        for group in sorted_results:
+            match_count = len(group["matches"])
+            if group["type"] == "entity":
+                print(
+                    f"  {match_count:>5}  {group['entity_id']:20s}  "
+                    f"{group['qualified_name']}  {group['file_path']}:{group['start_line']}-{group['end_line']}"
+                )
+            else:
+                print(f"  {match_count:>5}  {'(no entity)':20s}  {group['file_path']}")
+        return
+
     for group in results:
         match_count = len(group["matches"])
         if group["type"] == "entity":

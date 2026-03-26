@@ -131,7 +131,7 @@ def grep_entities(
     limit: int = 50,
     ignore_case: bool = False,
     context: int = 0,
-    path_filter: Optional[str] = None,
+    path_filter: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """Grep source files for a regex pattern and return matches with IR context.
 
@@ -183,13 +183,26 @@ def grep_entities(
     # Derive indexed file list from already-fetched entity data
     indexed_files = list(file_entities.keys())
 
-    # Apply path filter (directory prefix or glob pattern)
-    if path_filter:
-        if any(c in path_filter for c in "*?["):
-            indexed_files = [f for f in indexed_files if fnmatch.fnmatch(f, path_filter)]
-        else:
-            prefix = path_filter.rstrip("/")
-            indexed_files = [f for f in indexed_files if f == prefix or f.startswith(prefix + "/")]
+    # Apply path filter(s) (directory prefix or glob pattern)
+    path_filters: List[str] = []
+    if isinstance(path_filter, str):
+        path_filters = [path_filter]
+    elif isinstance(path_filter, (list, tuple)):
+        path_filters = [p for p in path_filter if p]
+
+    if path_filters:
+        def _matches_any_filter(rel_path: str) -> bool:
+            for filt in path_filters:
+                if any(c in filt for c in "*?["):
+                    if fnmatch.fnmatch(rel_path, filt):
+                        return True
+                else:
+                    prefix = filt.rstrip("/")
+                    if rel_path == prefix or rel_path.startswith(prefix + "/"):
+                        return True
+            return False
+
+        indexed_files = [f for f in indexed_files if _matches_any_filter(f)]
 
     # Grep each indexed file
     results_by_key: Dict[str, Dict[str, Any]] = {}  # key -> grouped result
