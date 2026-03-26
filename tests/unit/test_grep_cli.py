@@ -85,3 +85,80 @@ def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
     cli.cmd_grep(args)
 
     assert captured["context"] == 1
+
+
+def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path):
+    def fake_grep_entities(**kwargs):
+        return [
+            {
+                "type": "entity",
+                "entity_id": "BBB",
+                "qualified_name": "pkg.beta",
+                "kind": "function",
+                "file_path": "beta.py",
+                "start_line": 20,
+                "end_line": 40,
+                "matches": [{"line": 21, "text": "x"}],
+            },
+            {
+                "type": "entity",
+                "entity_id": "AAA",
+                "qualified_name": "pkg.alpha",
+                "kind": "function",
+                "file_path": "alpha.py",
+                "start_line": 10,
+                "end_line": 18,
+                "matches": [{"line": 12, "text": "x"}, {"line": 14, "text": "y"}, {"line": 16, "text": "z"}],
+            },
+        ]
+
+    monkeypatch.setattr(cli, "grep_entities", fake_grep_entities)
+
+    args = Namespace(
+        pattern="alpha",
+        repo_path=tmp_path,
+        level="Behavior",
+        limit=50,
+        ignore_case=False,
+        context=0,
+        path=["lib", "test"],
+        verbose=False,
+        evidence=False,
+        count=True,
+    )
+
+    cli.cmd_grep(args)
+    out = capsys.readouterr().out
+
+    assert "4 matches across 2 entities and 0 unmatched regions" in out
+    assert "    3  AAA" in out
+    assert "    1  BBB" in out
+    assert out.index("AAA") < out.index("BBB")
+    assert "12:" not in out
+
+
+def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_grep_entities(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "grep_entities", fake_grep_entities)
+
+    args = Namespace(
+        pattern="alpha",
+        repo_path=tmp_path,
+        level="Behavior",
+        limit=50,
+        ignore_case=False,
+        context=0,
+        path=["lib", "test", "docs/*.rst"],
+        verbose=False,
+        evidence=False,
+        count=False,
+    )
+
+    cli.cmd_grep(args)
+
+    assert captured["path_filter"] == ["lib", "test", "docs/*.rst"]
