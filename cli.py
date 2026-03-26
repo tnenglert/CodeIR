@@ -241,8 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("repo_path", type=Path, nargs="?", default=None,
                         help="Repository path (default: auto-detect from cwd)")
     p_init.add_argument("--level", default=None, help="Compression level (default: Behavior+Index)")
-    p_init.add_argument("--platform", choices=["claude", "codex", "openclaw", "all"],
-                        default=None, help="Target platform (default: auto-detect)")
+    p_init.add_argument("--platform", choices=["claude", "codex", "openclaw", "current", "all"],
+                        default=None, help="Target platform (default: repo auto-detect, then runtime)")
     p_init.add_argument("--list", action="store_true", dest="list_only",
                         help="Show what would be generated without writing files")
     p_init.add_argument("--force", action="store_true",
@@ -267,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # show
     p_show = sub.add_parser("show", help="Show entity IR")
-    p_show.add_argument("entity_id")
+    p_show.add_argument("entity_ids", nargs="+", metavar="ENTITY_ID")
     p_show.add_argument("--repo-path", type=Path, default=Path("."))
     p_show.add_argument("--level", default="Behavior", help="Compression level to show")
     p_show.add_argument("--full", action="store_true", help="Show full IR (skip smart pattern view)")
@@ -277,6 +277,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_expand.add_argument("entity_ids", nargs="+", metavar="ENTITY_ID",
                           help="One or more entity IDs, or STEM.* for all siblings")
     p_expand.add_argument("--repo-path", type=Path, default=Path("."))
+    p_expand.add_argument(
+        "--number",
+        action="store_true",
+        help="Show source with line numbers for easier citation",
+    )
 
     # compare
     p_compare = sub.add_parser("compare", help="Compare all compression levels for an entity")
@@ -324,6 +329,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_scope.add_argument("--all", action="store_true", dest="show_all",
                            help="Show all related entities (no truncation)")
 
+    # trace
+    p_trace = sub.add_parser("trace", help="Find call path between two entities")
+    p_trace.add_argument("from_entity", help="Starting entity ID")
+    p_trace.add_argument("to_entity", help="Target entity ID")
+    p_trace.add_argument("--repo-path", type=Path, default=Path("."))
+    p_trace.add_argument("--depth", type=int, default=10, help="Maximum search depth (default: 10)")
+    p_trace.add_argument("--resolution", choices=["import", "local", "fuzzy", "any"],
+                        default="any", help="Filter edges by resolution confidence (default: any)")
+
     # grep
     p_grep = sub.add_parser("grep", help="Grep source files with IR context")
     p_grep.add_argument("pattern", help="Regex pattern to search for")
@@ -334,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_grep.add_argument("-C", "--context", type=int, default=0, help="Show N surrounding lines per match (like grep -C)")
     p_grep.add_argument("--path", default=None, help="Scope to directory or glob (e.g., orm/ or 'engine/*.py')")
     p_grep.add_argument("-v", "--verbose", action="store_true", help="Include IR context for each entity match")
+    p_grep.add_argument(
+        "--evidence",
+        action="store_true",
+        help="Use instead of `rg -n ...` then `sed -n ...`: include exact matching lines, nearby context, and IR in one call",
+    )
 
     # patterns
     p_patterns = sub.add_parser("patterns", help="List detected structural patterns")
@@ -380,9 +399,15 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_init(args: argparse.Namespace) -> None:
     """Full setup: index a repository, then generate bearings and platform instructions."""
     from ir.init import (
-        find_repo_root, detect_platforms, get_platform_by_name,
-        generate_instructions, print_detection_help, ALL_PLATFORMS,
+        find_repo_root, generate_instructions, print_detection_help,
+        select_platforms, ALL_PLATFORMS,
     )
+
+    def _platform_names(platforms: list) -> str:
+        return ", ".join(platform.display_name for platform in platforms) if platforms else "none"
+
+    def _platform_keys(platforms: list) -> set[str]:
+        return {platform.name for platform in platforms}
 
     # Resolve repo path (auto-detect if not provided)
     if args.repo_path:
@@ -390,19 +415,32 @@ def cmd_init(args: argparse.Namespace) -> None:
     else:
         repo_path = find_repo_root()
 
-    # Determine target platforms
-    if args.platform == "all":
-        platforms = ALL_PLATFORMS
-    elif args.platform:
-        p = get_platform_by_name(args.platform)
-        platforms = [p] if p else []
-    else:
-        platforms = detect_platforms(repo_path)
+    selection = select_platforms(repo_path, args.platform)
+    platforms = selection.selected
 
     # If --list only, just show what would be generated and exit
     if args.list_only:
+        if args.platform is None:
+            print(f"Repo-detected platforms: {_platform_names(selection.repo_detected)}")
+            print(f"Current runtime platform: {_platform_names(selection.runtime_detected)}")
+            if selection.repo_detected and selection.runtime_detected:
+                repo_keys = _platform_keys(selection.repo_detected)
+                runtime_keys = _platform_keys(selection.runtime_detected)
+                if repo_keys != runtime_keys:
+                    print("Auto-selecting repo-detected platforms.")
+            elif selection.mode == "runtime_fallback" and platforms:
+                print("No repo markers found. Falling back to current runtime.")
+            print()
+
+        if args.platform == "current" and not platforms:
+            print("No current runtime platform detected.")
+            print("Use --platform <name> or --platform all to choose explicitly.")
+            return
+
         if not platforms:
             print_detection_help()
+            print()
+            print("A full init without detection will still default to Claude Code.")
             return
         results = generate_instructions(repo_path, platforms, dry_run=True)
         for platform, path, status in results:
@@ -410,6 +448,24 @@ def cmd_init(args: argparse.Namespace) -> None:
             action = "create" if status == "would_create" else "overwrite"
             print(f"  -> {platform.display_name:12s} -> {rel}  (would {action})")
         return
+
+    if args.platform == "current" and not platforms:
+        print("No current runtime platform detected.")
+        print("Use --platform <name> or --platform all to choose explicitly.")
+        return
+
+    if args.platform is None:
+        repo_keys = _platform_keys(selection.repo_detected)
+        runtime_keys = _platform_keys(selection.runtime_detected)
+        if selection.repo_detected and selection.runtime_detected and repo_keys != runtime_keys:
+            print(
+                "Note: current runtime looks like "
+                f"{_platform_names(selection.runtime_detected)}, but repo markers select "
+                f"{_platform_names(selection.repo_detected)}."
+            )
+            print("Using repo markers. Use --platform current or --platform all to override.")
+        elif selection.mode == "runtime_fallback" and platforms:
+            print(f"No repo markers detected. Using current runtime platform: {_platform_names(platforms)}.")
 
     # 1. Index (unless --skip-index)
     if not args.skip_index:
@@ -454,32 +510,30 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     from ir.classifier import generate_context_file, generate_summary, generate_category_file
 
-    claude_dir = repo_path / ".claude"
-    claude_dir.mkdir(parents=True, exist_ok=True)
+    bearings_paths = _get_bearings_paths(repo_path)
+    bearings_paths["base"].mkdir(parents=True, exist_ok=True)
 
     summary_content = generate_summary(repo_path.name, modules, total)
-    (claude_dir / "bearings-summary.md").write_text(summary_content, encoding="utf-8")
+    bearings_paths["summary"].write_text(summary_content, encoding="utf-8")
 
     bearings_content = generate_context_file(repo_path.name, modules, total, module_ids)
-    (claude_dir / "bearings.md").write_text(bearings_content, encoding="utf-8")
+    bearings_paths["map"].write_text(bearings_content, encoding="utf-8")
 
-    bearings_dir = claude_dir / "bearings"
-    bearings_dir.mkdir(parents=True, exist_ok=True)
+    bearings_paths["categories"].mkdir(parents=True, exist_ok=True)
     by_cat: Dict[str, list] = {}
     for mod in modules:
         by_cat.setdefault(mod["category"], []).append(mod)
     for category, cat_mods in by_cat.items():
         cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids)
-        (bearings_dir / f"{category}.md").write_text(cat_content, encoding="utf-8")
+        (bearings_paths["categories"] / f"{category}.md").write_text(cat_content, encoding="utf-8")
 
     print(f"  Bearings: {len(modules)} modules, {total} entities")
 
     # 3. Platform instructions
     if not platforms:
-        # No platforms detected — create .claude dir for Claude Code as default
+        # No repo/runtime platforms detected — default to Claude Code instructions
         from ir.init import ClaudeCode
         platforms = [ClaudeCode()]
-        claude_dir.mkdir(parents=True, exist_ok=True)
 
     results = generate_instructions(repo_path, platforms, dry_run=False, force=args.force)
 
@@ -574,80 +628,93 @@ def cmd_search(args: argparse.Namespace) -> None:
 
 def cmd_show(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    result = get_entity_with_ir(repo_path=repo_path, entity_id=args.entity_id, mode=args.level)
-    if not result:
-        print(f"Entity not found: {args.entity_id} (level={args.level})")
-        print("Run `codeir index <repo_path>` first.")
-        return
+    any_found = False
+    missing_ids = []
 
-    # Header
-    print(f"Entity: {result['qualified_name']}  [{result['kind']}]")
-    print(f"File:   {result['file_path']}:{result['line']}")
-    if result.get("mode"):
-        print(f"Level:  {result['mode']}")
+    for entity_id in args.entity_ids:
+        result = get_entity_with_ir(repo_path=repo_path, entity_id=entity_id, mode=args.level)
+        if not result:
+            missing_ids.append(entity_id)
+            continue
 
-    # Determine if we should use smart pattern view
-    use_smart_view = False
-    pattern_details = None
-    db_path = repo_path / ".codeir" / "entities.db"
+        if any_found:
+            print()
+        any_found = True
 
-    # Check global toggle and --full flag
-    patterns_disabled = not PATTERNS_ENABLED or getattr(args, "full", False)
+        start_line = int(result.get("start_line") or result["line"])
+        end_line = int(result.get("end_line") or start_line)
+        span = f"{start_line}-{end_line}" if end_line > start_line else str(start_line)
 
-    if args.level == "Behavior" and not patterns_disabled:
-        from index.pattern_detector import get_entity_pattern_details
-        pattern_details = get_entity_pattern_details(db_path, args.entity_id)
-        use_smart_view = pattern_details is not None
+        # Header
+        print(f"{result['qualified_name']} [{result['kind']}]  {result['file_path']}:{span}")
 
-    if use_smart_view and pattern_details:
-        # Smart pattern-aware view
-        cat_suffix = f" in {pattern_details.category}" if pattern_details.category else ""
-        print(f"\nPattern: {pattern_details.base_class} ({pattern_details.member_count} members{cat_suffix})")
+        # Determine if we should use smart pattern view
+        use_smart_view = False
+        pattern_details = None
+        db_path = repo_path / ".codeir" / "entities.db"
 
-        calls_str = ", ".join(pattern_details.common_calls[:5]) if pattern_details.common_calls else "-"
-        flags_str = pattern_details.common_flags if pattern_details.common_flags else "-"
-        print(f"  Standard calls: {calls_str}")
-        print(f"  Standard flags: {flags_str}")
+        # Check global toggle and --full flag
+        patterns_disabled = not PATTERNS_ENABLED or getattr(args, "full", False)
 
-        # Deviations
-        has_deviations = (
-            pattern_details.extra_calls or
-            pattern_details.extra_flags or
-            pattern_details.missing_calls
-        )
-        if has_deviations:
-            print(f"\nDeviations:")
-            if pattern_details.extra_calls:
-                print(f"  Extra calls: {', '.join(pattern_details.extra_calls)}")
-            if pattern_details.extra_flags:
-                print(f"  Extra flags: {pattern_details.extra_flags}")
-            if pattern_details.missing_calls:
-                print(f"  Missing calls: {', '.join(pattern_details.missing_calls)}")
+        if args.level == "Behavior" and not patterns_disabled:
+            from index.pattern_detector import get_entity_pattern_details
+            pattern_details = get_entity_pattern_details(db_path, entity_id)
+            use_smart_view = pattern_details is not None
+
+        if use_smart_view and pattern_details:
+            # Smart pattern-aware view
+            cat_suffix = f" in {pattern_details.category}" if pattern_details.category else ""
+            print(f"\nPattern: {pattern_details.base_class} ({pattern_details.member_count} members{cat_suffix})")
+
+            calls_str = ", ".join(pattern_details.common_calls[:5]) if pattern_details.common_calls else "-"
+            flags_str = pattern_details.common_flags if pattern_details.common_flags else "-"
+            print(f"  Standard calls: {calls_str}")
+            print(f"  Standard flags: {flags_str}")
+
+            # Deviations
+            has_deviations = (
+                pattern_details.extra_calls or
+                pattern_details.extra_flags or
+                pattern_details.missing_calls
+            )
+            if has_deviations:
+                print(f"\nDeviations:")
+                if pattern_details.extra_calls:
+                    print(f"  Extra calls: {', '.join(pattern_details.extra_calls)}")
+                if pattern_details.extra_flags:
+                    print(f"  Extra flags: {pattern_details.extra_flags}")
+                if pattern_details.missing_calls:
+                    print(f"  Missing calls: {', '.join(pattern_details.missing_calls)}")
+            else:
+                print(f"\nDeviations: none (fully standard)")
+
+            print(f"\nFull IR: codeir show {entity_id} --full")
         else:
-            print(f"\nDeviations: none (fully standard)")
+            # Standard IR view (vanilla)
+            ir_text = result['ir_text']
 
-        print(f"\nFull IR: codeir show {args.entity_id} --full")
-    else:
-        # Standard IR view (vanilla)
-        ir_text = result['ir_text']
+            # For Index level, add pattern marker if entity belongs to a pattern (unless patterns disabled)
+            if args.level == "Index" and not patterns_disabled:
+                from index.pattern_detector import get_entity_pattern
+                pattern_id = get_entity_pattern(db_path, entity_id)
+                if pattern_id:
+                    # Insert pattern marker after entity ID
+                    parts = ir_text.split(" ", 2)  # opcode, entity_id, rest
+                    if len(parts) >= 2:
+                        ir_text = f"{parts[0]} {parts[1]} →{pattern_id}"
+                        if len(parts) > 2:
+                            ir_text += f" {parts[2]}"
 
-        # For Index level, add pattern marker if entity belongs to a pattern (unless patterns disabled)
-        if args.level == "Index" and not patterns_disabled:
-            from index.pattern_detector import get_entity_pattern
-            pattern_id = get_entity_pattern(db_path, args.entity_id)
-            if pattern_id:
-                # Insert pattern marker after entity ID
-                parts = ir_text.split(" ", 2)  # opcode, entity_id, rest
-                if len(parts) >= 2:
-                    ir_text = f"{parts[0]} {parts[1]} →{pattern_id}"
-                    if len(parts) > 2:
-                        ir_text += f" {parts[2]}"
+            print(f"{ir_text}")
 
-        # Inline legend for Behavior level
-        if args.level == "Behavior":
-            print(f"\n[C=calls F=flags(R=returns,E=raises,I=if,L=loop,T=try,W=with) A=assigns B=base]")
+    for entity_id in missing_ids:
+        if any_found:
+            print()
+        print(f"Entity not found: {entity_id} (level={args.level})")
+        any_found = True
 
-        print(f"{ir_text}")
+    if missing_ids and len(missing_ids) == len(args.entity_ids):
+        print("Run `codeir index <repo_path>` first.")
 
 
 def cmd_expand(args: argparse.Namespace) -> None:
@@ -685,6 +752,20 @@ def cmd_expand(args: argparse.Namespace) -> None:
     if is_batch:
         print(f"=== Expanding {len(all_entities)} entities ===\n")
 
+    def _format_source(source: str, start_line: int, number: bool) -> str:
+        if not number:
+            return source
+        lines = source.splitlines()
+        if not lines:
+            return source
+        width = len(str(start_line + len(lines) - 1))
+        numbered = "\n".join(
+            f"{start_line + i:>{width}d}: {line}" for i, line in enumerate(lines)
+        )
+        if source.endswith("\n"):
+            numbered += "\n"
+        return numbered
+
     for i, loc in enumerate(all_entities):
         if is_batch and i > 0:
             print("\n" + "─" * 60 + "\n")
@@ -697,7 +778,7 @@ def cmd_expand(args: argparse.Namespace) -> None:
         )
         print(f"Entity: {loc['qualified_name']}  [{loc['kind']}]")
         print(f"File:   {loc['file_path']}:{loc['start_line']}-{loc['end_line']}")
-        print(f"\n{source}")
+        print(f"\n{_format_source(source, int(loc['start_line']), args.number)}")
 
     # Dependency summary footer (only for single entity)
     if not is_batch and all_entities:
@@ -1054,8 +1135,152 @@ def cmd_scope(args: argparse.Namespace) -> None:
             print(f"Run `codeir scope {args.entity_id} --all` for complete list")
 
 
-def _print_matches(matches: list) -> None:
+def cmd_trace(args: argparse.Namespace) -> None:
+    """Find shortest call path between two entities using BFS."""
+    repo_path = args.repo_path.resolve()
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print("No index found. Run `codeir index <repo_path>` first.")
+        return
+
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    from_id = args.from_entity.upper()
+    to_id = args.to_entity.upper()
+    max_depth = args.depth
+    resolution_filter = args.resolution
+
+    # Verify both entities exist
+    from_entity = conn.execute(
+        "SELECT id, qualified_name, file_path, start_line, kind FROM entities WHERE id = ?",
+        (from_id,)
+    ).fetchone()
+    to_entity = conn.execute(
+        "SELECT id, qualified_name, file_path, start_line, kind FROM entities WHERE id = ?",
+        (to_id,)
+    ).fetchone()
+
+    if not from_entity:
+        print(f"Entity not found: {from_id}")
+        conn.close()
+        return
+    if not to_entity:
+        print(f"Entity not found: {to_id}")
+        conn.close()
+        return
+
+    if from_id == to_id:
+        print("Call path found (0 hops):")
+        print()
+        print(f"  {from_entity['id']:<16} {from_entity['qualified_name']:<40} [{from_entity['kind']}]")
+        print(f"  {'':16} {from_entity['file_path']}:{from_entity['start_line']}")
+        print()
+        print("(static call path - does not guarantee runtime execution order)")
+        conn.close()
+        return
+
+    # Build resolution filter clause
+    if resolution_filter == "any":
+        res_clause = ""
+        res_params = []
+    elif resolution_filter == "fuzzy":
+        # Include all resolutions (fuzzy is lowest confidence, so include everything)
+        res_clause = ""
+        res_params = []
+    elif resolution_filter == "local":
+        # Include local and import (exclude fuzzy)
+        res_clause = " AND resolution IN ('local', 'import')"
+        res_params = []
+    elif resolution_filter == "import":
+        # Only import resolution
+        res_clause = " AND resolution = 'import'"
+        res_params = []
+    else:
+        res_clause = ""
+        res_params = []
+
+    # BFS to find shortest path
+    # Forward edges: SELECT entity_id FROM callers WHERE caller_id = ?
+    # (entity_id is the callee, caller_id is who's calling)
+    from collections import deque
+
+    queue = deque([(from_id, [from_id])])
+    visited = {from_id}
+
+    found_path = None
+
+    while queue and not found_path:
+        current, path = queue.popleft()
+
+        if len(path) > max_depth:
+            continue
+
+        # Get forward edges (what does current call?)
+        query = f"SELECT entity_id, resolution FROM callers WHERE caller_id = ?{res_clause}"
+        callees = conn.execute(query, (current,)).fetchall()
+
+        for row in callees:
+            callee_id = row["entity_id"]
+            resolution = row["resolution"]
+
+            if callee_id == to_id:
+                found_path = path + [callee_id]
+                break
+
+            if callee_id not in visited:
+                visited.add(callee_id)
+                queue.append((callee_id, path + [callee_id]))
+
+    if not found_path:
+        print(f"No call path found from {from_id} to {to_id}")
+        print(f"  (searched {len(visited)} entities, max depth {max_depth})")
+        if resolution_filter != "any":
+            print(f"  (resolution filter: {resolution_filter})")
+        conn.close()
+        return
+
+    # Fetch entity details for the path
+    path_entities = []
+    for entity_id in found_path:
+        row = conn.execute(
+            "SELECT id, qualified_name, file_path, start_line, kind FROM entities WHERE id = ?",
+            (entity_id,)
+        ).fetchone()
+        if row:
+            path_entities.append(dict(row))
+        else:
+            path_entities.append({"id": entity_id, "qualified_name": "?", "file_path": "?", "start_line": 0, "kind": "?"})
+
+    conn.close()
+
+    # Output
+    hops = len(found_path) - 1
+    print(f"Call path found ({hops} hop{'s' if hops != 1 else ''}):")
+    print()
+
+    for i, entity in enumerate(path_entities):
+        indent = "  "
+        name = entity["qualified_name"]
+        loc = f"{entity['file_path']}:{entity['start_line']}"
+        kind = entity["kind"]
+
+        print(f"{indent}{entity['id']:<16} {name:<40} [{kind}]")
+        print(f"{indent}{'':16} {loc}")
+
+        if i < len(path_entities) - 1:
+            print(f"{indent}{'':16} |")
+            print(f"{indent}{'':16} v calls")
+
+    print()
+    print("(static call path - does not guarantee runtime execution order)")
+
+
+def _print_matches(matches: list, max_matches: int | None = None) -> int:
     """Print match lines with optional context, deduplicating overlapping context."""
+    if max_matches is not None:
+        matches = matches[:max_matches]
+
     pad = f"  {'':20s}    "
     shown_lines: set = set()
     for i, m in enumerate(matches):
@@ -1082,10 +1307,13 @@ def _print_matches(matches: list) -> None:
             last_line = last_shown[-1]["line"] if last_shown else m["line"]
             if next_first_line > last_line + 1:
                 print(f"{pad}  ...")
+    return len(matches)
 
 
 def cmd_grep(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    evidence = getattr(args, "evidence", False)
+    context = args.context if args.context else (2 if evidence else 0)
     try:
         results = grep_entities(
             pattern=args.pattern,
@@ -1093,7 +1321,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
             level=args.level,
             limit=args.limit,
             ignore_case=args.ignore_case,
-            context=args.context,
+            context=context,
             path_filter=args.path,
         )
     except FileNotFoundError:
@@ -1112,7 +1340,8 @@ def cmd_grep(args: argparse.Namespace) -> None:
     file_groups = sum(1 for r in results if r["type"] == "file")
     print(f"{total_matches} matches across {entity_groups} entities and {file_groups} unmatched regions\n")
 
-    verbose = getattr(args, "verbose", False)
+    verbose = getattr(args, "verbose", False) or evidence
+    max_matches = 3 if evidence else None
     for group in results:
         match_count = len(group["matches"])
         if group["type"] == "entity":
@@ -1121,11 +1350,15 @@ def cmd_grep(args: argparse.Namespace) -> None:
             if verbose:
                 ir_text = group.get("ir_text") or "(no IR at this level)"
                 print(f"  {'':20s}  IR: {ir_text}")
-            _print_matches(group["matches"])
+            shown = _print_matches(group["matches"], max_matches=max_matches)
+            if evidence and match_count > shown:
+                print(f"  {'':20s}    ... {match_count - shown} more matches in this entity")
             print()
         else:
             print(f"  {'(no entity)':20s}  {group['file_path']}  ({match_count} matches)")
-            _print_matches(group["matches"])
+            shown = _print_matches(group["matches"], max_matches=max_matches)
+            if evidence and match_count > shown:
+                print(f"  {'':20s}    ... {match_count - shown} more matches in this file")
             print()
 
 
@@ -1242,6 +1475,30 @@ def _compute_module_ids(modules: list) -> Dict[str, str]:
     return result
 
 
+def _get_bearings_paths(repo_path: Path, legacy: bool = False) -> Dict[str, Path]:
+    """Return the canonical bearings file paths for a repository."""
+    base_dir = repo_path / (".claude" if legacy else ".codeir")
+    return {
+        "base": base_dir,
+        "summary": base_dir / "bearings-summary.md",
+        "map": base_dir / "bearings.md",
+        "categories": base_dir / "bearings",
+    }
+
+
+def _resolve_bearings_paths(repo_path: Path) -> tuple[Dict[str, Path], bool]:
+    """Return the preferred readable bearings paths and whether they are legacy."""
+    current_paths = _get_bearings_paths(repo_path)
+    if current_paths["summary"].exists():
+        return current_paths, False
+
+    legacy_paths = _get_bearings_paths(repo_path, legacy=True)
+    if legacy_paths["summary"].exists():
+        return legacy_paths, True
+
+    return current_paths, False
+
+
 def _generate_bearings_files(repo_path: Path) -> None:
     """Generate all bearings files (summary, full, per-category)."""
     db_path = repo_path / ".codeir" / "entities.db"
@@ -1279,22 +1536,19 @@ def _generate_bearings_files(repo_path: Path) -> None:
 
     from ir.classifier import generate_context_file, generate_summary, generate_category_file
 
-    claude_dir = repo_path / ".claude"
-    claude_dir.mkdir(parents=True, exist_ok=True)
+    paths = _get_bearings_paths(repo_path)
+    paths["base"].mkdir(parents=True, exist_ok=True)
 
     # Tier 1: bearings-summary.md
     summary_content = generate_summary(repo_path.name, modules, total)
-    summary_path = claude_dir / "bearings-summary.md"
-    summary_path.write_text(summary_content, encoding="utf-8")
+    paths["summary"].write_text(summary_content, encoding="utf-8")
 
     # Tier 2: bearings.md (collapsed working map)
     bearings_content = generate_context_file(repo_path.name, modules, total, module_ids)
-    bearings_path = claude_dir / "bearings.md"
-    bearings_path.write_text(bearings_content, encoding="utf-8")
+    paths["map"].write_text(bearings_content, encoding="utf-8")
 
     # Tier 3: bearings/{category}.md (full uncollapsed per category)
-    bearings_dir = claude_dir / "bearings"
-    bearings_dir.mkdir(parents=True, exist_ok=True)
+    paths["categories"].mkdir(parents=True, exist_ok=True)
 
     by_cat: Dict[str, list] = {}
     for mod in modules:
@@ -1302,13 +1556,13 @@ def _generate_bearings_files(repo_path: Path) -> None:
 
     for category, cat_mods in by_cat.items():
         cat_content = generate_category_file(repo_path.name, category, cat_mods, module_ids, db_path=db_path)
-        cat_path = bearings_dir / f"{category}.md"
+        cat_path = paths["categories"] / f"{category}.md"
         cat_path.write_text(cat_content, encoding="utf-8")
 
     print(f"Generated bearings ({len(modules)} modules, {total} entities):")
-    print(f"  Summary:    {summary_path}")
-    print(f"  Working map:{bearings_path}")
-    print(f"  Categories: {bearings_dir}/ ({len(by_cat)} files)")
+    print(f"  Summary:    {paths['summary']}")
+    print(f"  Working map:{paths['map']}")
+    print(f"  Categories: {paths['categories']}/ ({len(by_cat)} files)")
 
 
 def _estimate_tokens(file_path: Path) -> int:
@@ -1320,7 +1574,6 @@ def _estimate_tokens(file_path: Path) -> int:
 
 def cmd_bearings(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    claude_dir = repo_path / ".claude"
 
     # --generate mode: regenerate all files
     if args.generate:
@@ -1328,13 +1581,18 @@ def cmd_bearings(args: argparse.Namespace) -> None:
         return
 
     # Check if bearings files exist
-    summary_path = claude_dir / "bearings-summary.md"
-    bearings_path = claude_dir / "bearings.md"
-    bearings_dir = claude_dir / "bearings"
+    paths, using_legacy_paths = _resolve_bearings_paths(repo_path)
+    summary_path = paths["summary"]
+    bearings_path = paths["map"]
+    bearings_dir = paths["categories"]
 
     if not summary_path.exists():
         print("No bearings files found. Run `codeir bearings --generate` first.")
         return
+
+    if using_legacy_paths:
+        print("Using legacy bearings files from `.claude/`. Run `codeir bearings --generate` to migrate them to `.codeir/`.")
+        print()
 
     # --full mode: output full bearings.md
     if args.full:
@@ -1540,6 +1798,7 @@ def main() -> None:
         "callers": cmd_callers,
         "impact": cmd_impact,
         "scope": cmd_scope,
+        "trace": cmd_trace,
         "grep": cmd_grep,
         "stats": cmd_stats,
         "module-map": cmd_module_map,

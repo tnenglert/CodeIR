@@ -74,6 +74,7 @@ codeir expand FLSH.04              # raw source for this entity only
 Understand dependencies:
 
 ```bash
+codeir trace FLSH.04 AFTRFLSHPSTXC  # shortest static call path between two entities
 codeir callers FLSH.04             # what calls this entity
 codeir impact FLSH.04 --depth 2    # reverse dependency analysis
 codeir scope FLSH.04               # callers + callees + sibling methods
@@ -84,7 +85,9 @@ codeir scope FLSH.04               # callers + callees + sibling methods
 Add a `codeir.md` file to `.claude/rules/` in your repository. Claude Code reads this automatically at session start. A template is included at `templates/codeir.md` or you can generate one:
 
 ```bash
-codeir init                        # generates .claude/rules/codeir.md with real entity IDs
+codeir init                        # uses repo markers, then falls back to current runtime
+codeir init --platform current     # generate only for the active runtime
+codeir init --platform all         # generate for Claude Code, Codex, and OpenClaw
 ```
 
 Once integrated, Claude Code uses CodeIR commands instead of reading raw files Ñ searching the IR, inspecting behavior summaries, and expanding only the source it needs.

@@ -6,19 +6,22 @@ the right skill/instruction file in the right place. Can also target a
 specific platform with --platform.
 
 Usage:
-    codeir init                     # auto-detect and generate
-    codeir init --platform claude   # force Claude Code only
-    codeir init --platform codex    # force Codex only
-    codeir init --platform openclaw # force OpenClaw only
-    codeir init --platform all      # generate for all platforms
-    codeir init --list              # show what would be generated
+    codeir init                      # use repo markers, fall back to runtime
+    codeir init --platform current   # use current runtime only
+    codeir init --platform claude    # force Claude Code only
+    codeir init --platform codex     # force Codex only
+    codeir init --platform openclaw  # force OpenClaw only
+    codeir init --platform all       # generate for all platforms
+    codeir init --list               # show what would be generated
 """
 
 from __future__ import annotations
 
+import os
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -57,19 +60,29 @@ def _core_instructions() -> str:
         codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
         ```
 
-        **Inspect** — what an entity does, without reading source:
+        **Inspect** — compact behavior snapshots for one or more entities:
         ```
-        codeir show <entity_id> [--level Index|Behavior]
+        codeir show <entity_id> [<entity_id> ...] [--level Index|Behavior]
         ```
+        Use this to narrow candidates quickly. If you already know you need the
+        full implementation, skip `show` and use `expand`.
 
         **Expand** — raw source when you need to edit or verify:
         ```
         codeir expand <entity_id>              # single entity
+        codeir expand <entity_id> --number     # source with line numbers for citation
         codeir expand <id1> <id2> <id3>        # multiple entities in one call
         codeir expand 'STEM.*'                 # all siblings (STEM, STEM.01, STEM.02, ...)
         ```
 
-        **Trace** — what depends on an entity:
+        **Trace** — shortest static call path between two entities:
+        ```
+        codeir trace <from_entity> <to_entity> [--depth N] [--resolution import|local|fuzzy|any]
+        ```
+        Use this for path-shaped questions like "how does X trigger Y?" or "how do
+        we get from this entry point to that hook?"
+
+        **Callers** — what depends on an entity:
         ```
         codeir callers <entity_id>
         ```
@@ -120,6 +133,186 @@ def _core_instructions() -> str:
     """)
 
 
+def _codex_instructions() -> str:
+    """Return Codex-specific CodeIR guidance."""
+    return textwrap.dedent("""\
+        ## CodeIR — Compiled Codebase Representation
+
+        This repository has a pre-built semantic index of the entire codebase.
+        Instead of reading raw source files, use CodeIR to search, inspect, and
+        trace entities at the abstraction level that matches your task.
+
+        You must minimize total tool calls. Prefer one decisive tool call over
+        several exploratory ones.
+
+        For unfamiliar, cross-file, or architectural tasks, orient by running
+        `codeir bearings` before search, grep, or expand.
+
+        ### Commands
+
+        **Bearings** — orient to the repo before narrowing:
+        ```
+        codeir bearings
+        codeir bearings <category>
+        codeir bearings --full
+        ```
+        Use this first when the task is unfamiliar, cross-cutting, or architectural.
+        Bearings makes category-scoped search more effective.
+
+        **Search** — find entities by name:
+        ```
+        codeir search <terms> [--category <cat>]
+        ```
+        After `bearings`, prefer `--category` to narrow to the most likely area.
+
+        **Grep** — regex search across source, grouped by entity:
+        ```
+        codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
+        codeir grep <pattern> --evidence [--path <dir_or_glob>] [-i]
+        ```
+        Use this for census/pattern tasks where you need all occurrences, but want
+        entity context alongside matches.
+        Use `--evidence` instead of `rg -n ...` followed by `sed -n ...` when you
+        want exact matching lines, nearby context, and the owning entity in one call.
+
+        **Inspect** — compact behavior snapshots for one or more entities:
+        ```
+        codeir show <entity_id> [<entity_id> ...] [--level Index|Behavior]
+        ```
+        Use this to narrow candidates quickly. If you already know you need the
+        full implementation, skip `show` and use `expand`.
+
+        **Expand** — raw source when you need to edit or verify:
+        ```
+        codeir expand <entity_id>              # single entity
+        codeir expand <entity_id> --number     # source with line numbers for citation
+        codeir expand <id1> <id2> <id3>        # multiple entities in one call
+        codeir expand 'STEM.*'                 # all siblings (STEM, STEM.01, STEM.02, ...)
+        ```
+
+        **Trace** — shortest static call path between two entities:
+        ```
+        codeir trace <from_entity> <to_entity> [--depth N] [--resolution import|local|fuzzy|any]
+        ```
+        Use this for path-shaped questions like "how does X trigger Y?" or "how do
+        we get from this entry point to that hook?"
+
+        **Callers** — what depends on an entity:
+        ```
+        codeir callers <entity_id>
+        ```
+
+        **Impact** — reverse dependency analysis:
+        ```
+        codeir impact <entity_id> [--depth N]
+        ```
+
+        **Scope** — minimal context to safely modify an entity:
+        ```
+        codeir scope <entity_id>
+        ```
+
+        ### Three workflows
+
+        **Show mode** — understanding tasks
+
+        Use when the goal is to explain behavior, identify likely cause, or compare
+        a few candidate entities.
+
+        1. `codeir bearings` → orient
+        2. `codeir search "..." --category <cat>` → find candidates
+        3. `codeir show <id>` → read Behavior IR
+        4. `codeir expand <id>` only if one finalist needs verification
+
+        If `show` already answers the question, stop there.
+
+        **Expand mode** — implementation tasks
+
+        Use when the goal is to change code safely.
+
+        1. `codeir bearings` → orient
+        2. `codeir search "..." --category <cat>` → find likely edit targets
+        3. `codeir show <id>` → confirm the right entity
+        4. `codeir scope <id>` or `codeir callers <id>` if blast radius matters
+        5. `codeir expand <id>` for the entities you will edit
+
+        If you already expect to need full source, skip `show` and go straight to
+        `expand`. Expand only the finalists you expect to modify.
+
+        **Grep mode** — census tasks
+
+        Use when the goal is to find patterns, conventions, or all occurrences
+        across the repo.
+
+        1. `codeir bearings` → orient
+        2. `codeir grep "..." --path ...` → find matching entities
+        3. `codeir show <id>` if you need behavior context
+        4. `codeir expand <id>` only for representative examples
+
+        Prefer `codeir grep` over raw text grep when entity ownership matters.
+        Prefer `codeir grep --evidence` over `rg -n ...` then `sed -n ...` when you
+        want exact lines and nearby proof without a separate source-read step.
+
+        **Trace mode** — path questions
+
+        Use when the goal is to connect an entry point to an effect, hook, or
+        downstream behavior.
+
+        1. `codeir bearings` → orient
+        2. `codeir search "..." --category <cat>` → identify likely endpoints
+        3. `codeir trace <from> <to>` → find the shortest static call path
+        4. `codeir expand <id>` only for the path nodes that need verification
+
+        Use `trace` instead of manually chaining `callers`, `search`, `grep`, and
+        line-range reads when the task is primarily "how do we get from A to B?"
+
+        ### Selection rules
+
+        - You must minimize total tool calls. Prefer one decisive tool call over
+          several exploratory ones.
+        - Use `show` for a compact behavior snapshot only when it might change
+          whether an entity is relevant.
+        - Use `expand` when you already know you need the full implementation or
+          expect to edit the entity.
+        - Use `expand --number` when you need exact source lines with stable line
+          numbers for citation or proof.
+        - Do not `show` an entity immediately before `expand` unless the `show`
+          result could change your decision.
+        - Do not `expand` weak matches just to be sure. Keep narrowing with
+          `search`, `grep`, or `show` until only a small finalist set remains.
+        - After a multi-entity `show`, either discard a candidate or `expand` it.
+          Do not `show` the same entity again individually unless the first output
+          was incomplete.
+        - Use `codeir grep --evidence` instead of `rg -n ...` followed by
+          `sed -n ...` when you need exact matching lines plus nearby proof.
+
+        ### Annotated entity lists
+
+        Output from `callers`, `impact`, and `scope` includes inline triage metadata:
+        ```
+          CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+          GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+        ```
+
+        - `[N callers]` — connectivity/importance
+        - `→Pattern` — pattern membership (standard infrastructure)
+        - `[kind, ~N lines]` — entity type and size
+
+        Results are smart-sorted (high-caller core logic first, tests last) and
+        truncated to 15 by default. Use `--all` to see the complete list.
+
+        ### Reading compressed representations
+
+        Behavior fields:
+        - `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
+        - `C=` — calls made
+        - `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
+        - `A=` — assignment count
+        - `B=` — base class
+        - `#TAG` — domain and category tags
+    """)
+
+
 # ---------------------------------------------------------------------------
 # Platform definitions
 # ---------------------------------------------------------------------------
@@ -133,6 +326,10 @@ class Platform:
     def detect(self, repo_root: Path) -> bool:
         """Return True if this platform's config directory exists."""
         raise NotImplementedError
+
+    def detect_runtime(self, env: Optional[Mapping[str, str]] = None) -> bool:
+        """Return True if the active process environment looks like this platform."""
+        return False
 
     def target_path(self, repo_root: Path) -> Path:
         """Return the path where the instruction file should be written."""
@@ -172,6 +369,17 @@ class Codex(Platform):
             or (repo_root / "AGENTS.md").exists()
         )
 
+    def detect_runtime(self, env: Optional[Mapping[str, str]] = None) -> bool:
+        runtime_env = env or os.environ
+        codex_markers = (
+            "CODEX_THREAD_ID",
+            "CODEX_SHELL",
+            "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+            "CODEX_SANDBOX",
+            "CODEX_CI",
+        )
+        return any(runtime_env.get(marker) for marker in codex_markers)
+
     def target_path(self, repo_root: Path) -> Path:
         # Repo-scoped skills live in .agents/skills/<name>/SKILL.md
         return repo_root / ".agents" / "skills" / "codeir" / "SKILL.md"
@@ -190,7 +398,7 @@ class Codex(Platform):
             ---
 
         """)
-        return frontmatter + _core_instructions()
+        return frontmatter + _codex_instructions()
 
 
 class OpenClaw(Platform):
@@ -238,6 +446,16 @@ class OpenClaw(Platform):
 ALL_PLATFORMS: List[Platform] = [ClaudeCode(), Codex(), OpenClaw()]
 
 
+@dataclass(frozen=True)
+class PlatformSelection:
+    """Describe platform auto-selection for a given init invocation."""
+
+    selected: List[Platform]
+    repo_detected: List[Platform]
+    runtime_detected: List[Platform]
+    mode: str
+
+
 # ---------------------------------------------------------------------------
 # Detection and generation logic
 # ---------------------------------------------------------------------------
@@ -258,12 +476,57 @@ def detect_platforms(repo_root: Path) -> List[Platform]:
     return [p for p in ALL_PLATFORMS if p.detect(repo_root)]
 
 
+def detect_runtime_platforms(env: Optional[Mapping[str, str]] = None) -> List[Platform]:
+    """Return platforms inferred from the active runtime environment."""
+    runtime_env = env or os.environ
+    override = (runtime_env.get("CODEIR_CURRENT_PLATFORM") or "").strip().lower()
+    if override:
+        if override == "all":
+            return list(ALL_PLATFORMS)
+        platform = get_platform_by_name(override)
+        return [platform] if platform else []
+
+    return [p for p in ALL_PLATFORMS if p.detect_runtime(runtime_env)]
+
+
 def get_platform_by_name(name: str) -> Optional[Platform]:
     """Get a platform by its short name."""
     for p in ALL_PLATFORMS:
         if p.name == name:
             return p
     return None
+
+
+def select_platforms(
+    repo_root: Path,
+    requested_platform: Optional[str] = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> PlatformSelection:
+    """Resolve which platforms init should target.
+
+    Selection precedence:
+    1. Explicit --platform request
+    2. Repo marker detection
+    3. Runtime detection fallback
+    """
+    repo_detected = detect_platforms(repo_root)
+    runtime_detected = detect_runtime_platforms(env)
+
+    if requested_platform == "all":
+        return PlatformSelection(list(ALL_PLATFORMS), repo_detected, runtime_detected, "all")
+
+    if requested_platform == "current":
+        return PlatformSelection(runtime_detected, repo_detected, runtime_detected, "current")
+
+    if requested_platform:
+        platform = get_platform_by_name(requested_platform)
+        selected = [platform] if platform else []
+        return PlatformSelection(selected, repo_detected, runtime_detected, "explicit")
+
+    if repo_detected:
+        return PlatformSelection(repo_detected, repo_detected, runtime_detected, "repo")
+
+    return PlatformSelection(runtime_detected, repo_detected, runtime_detected, "runtime_fallback")
 
 
 def generate_instructions(
@@ -313,4 +576,5 @@ def print_detection_help() -> None:
     print("  OpenClaw     ->  .openclaw/ or openclaw.json")
     print()
     print("Use --platform <name> to generate for a specific platform,")
+    print("--platform current to use the active runtime,")
     print("or --platform all to generate for all platforms.")
