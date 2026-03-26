@@ -1,8 +1,8 @@
-# CodeIR
+<img width="1192" height="673" alt="preview" src="https://github.com/user-attachments/assets/d41c08f0-3e89-4fd0-b640-2a811a4abee6" />
 
 CodeIR compiles Python codebases into a hierarchical semantic representation that fits in an LLM's context window. Instead of reading source files, your coding agent navigates architecture.
 
-Index a repo once. Your agent sees every entity, every call relationship, every module boundary Ñ before reading a single line of source.
+Index a repo once. Your agent sees every entity, every call relationship, every module boundary before reading a single line of source.
 
 ## Why
 
