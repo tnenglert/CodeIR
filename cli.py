@@ -214,8 +214,8 @@ def smart_truncate_entities(
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
-    "extensions": [".py"],
+    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir", "target"],
+    "extensions": None,  # Auto-detect from language
     "compression_level": "Behavior+Index",
 }
 
@@ -602,6 +602,7 @@ def cmd_index(args: argparse.Namespace) -> None:
         summary = ", ".join(f"{name}({cnt})" for name, cnt in top_ambiguous)
         print(f"  Ambiguous calls: {len(ambiguous)} ({summary})")
 
+    print(f"  Language: {result.get('language', 'python')}")
     print(f"  Level: {result.get('compression_level', 'Behavior')}")
     print(f"  Store: {result.get('store_dir', '')}")
 
@@ -1737,7 +1738,8 @@ def cmd_stats(args: argparse.Namespace) -> None:
         print(f"  {kind_info['kind']:20s}  {kind_info['count']}")
 
     fc = stats["file_coverage"]
-    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['python_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+    files_indexed = fc.get("files_indexed") or fc.get("python_files_indexed", 0)
+    print(f"\nFile coverage: {fc['files_with_entities']}/{files_indexed} ({fc['coverage_percent']:.1f}%)")
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]
