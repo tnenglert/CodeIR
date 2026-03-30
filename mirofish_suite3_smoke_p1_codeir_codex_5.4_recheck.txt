@@ -1,0 +1,90 @@
+
+############################################################
+# BENCHMARK REPORT — 2026-03-30 01:53 UTC
+############################################################
+
+————————————————————————————————————————————————————————————
+Benchmark 1/1
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    I'm getting these weird super thin report sections sometimes, like the model
+clearly started the sec...
+  Session:   019d3c70-d4f3-7223-8636-9c6110d8819c
+  Duration:  103.2s
+  Tokens:
+    Context: 536.1k
+    Output:  4.6k
+    Total:   540.8k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 22
+    TOTAL: 22
+  Commands (22):
+      1. codeir bearings
+      2. rg -n "report section|section writeup|writeup|report" -S .
+      3. codeir search ReportAgent --category core_logic
+      4. codeir search "section_complete|planning_complete|report_start|generate_section|sections" --category core_logic
+      5. rg -n "section_complete|planning_complete|report_start|generate_section|markdown_content|sections\]|sections =|sectio...
+      6. sed -n '1160,1715p' backend/app/services/report_agent.py
+      7. sed -n '1,360p' backend/app/services/report_agent.py
+      8. codeir grep "_generate_section_react|assemble_full_report|planning_complete|section_complete|word_count|字数|minimum|最少...
+      9. sed -n '520,860p' backend/app/services/report_agent.py
+     10. sed -n '2200,2335p' backend/app/services/report_agent.py
+     11. sed -n '2335,2515p' backend/app/services/report_agent.py
+     12. rg -n "def chat\(|def chat_json\(|max_tokens|temperature|response_format|stream|finish_reason|truncate|截断" backend/ap...
+     13. sed -n '1,280p' backend/app/utils/llm_client.py
+     14. rg -n "def _parse_tool_calls|def _execute_tool|MAX_TOOL_CALLS_PER_SECTION|tool_calls_count|used_tools|Observation" ba...
+     15. sed -n '860,1115p' backend/app/services/report_agent.py
+     16. sed -n '1115,1225p' backend/app/services/report_agent.py
+     17. sed -n '240,380p' backend/app/services/zep_tools.py
+     18. rg -n "content_length|len\(content\)|section_content|section_complete|thin|stub|retry|regenerate|质量|完整性|完整|章节" backen...
+     19. sed -n '380,520p' backend/app/services/report_agent.py
+     20. nl -ba backend/app/services/report_agent.py | sed -n '560,840p'
+     21. sed -n '2098,2188p' backend/app/services/report_agent.py
+     22. nl -ba backend/app/services/report_agent.py | sed -n '1220,1535p'
+  CodeIR commands (4):
+      1. bearings
+         codeir bearings
+      2. search -> ReportAgent
+         codeir search ReportAgent --category core_logic
+      3. search -> section_complete|planning_complete|report_start|generate_section|sections
+         codeir search "section_complete|planning_complete|report_start|generate_section|sections" --category core_logic
+      4. grep -> _generate_section_react|assemble_full_report|planning_complete|section_complete|word_count|字数|minimum|最少|至少|token|max_tokens|stop
+         codeir grep "_generate_section_react|assemble_full_report|planning_complete|section_complete|word_count|字数|minimum|最少|至少|token|max_tokens|stop" --path backend/app/services/report_agent.py -v
+  Final response (5664 chars):
+    | **Findings**
+    | 
+    | 1. The section generator accepts almost any prose as a “finished section” once the minimum tool count is met, even if it is just a shallow stub. In [`backend/app/services/report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [1490](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1490), any response with no tool call and no `Final Answer:` marker is taken as the final section verbatim. There is no quality gate for length, quote count, structure, or completeness. That matches “the model started the section and then gave up” because an incomplete blob is still treated as success.
+    | 
+    | 2. The loop has a hard cap of only five model turns total, but each section is forced to spend at least three of those on tool calls. In [`report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [1285-1286](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1285), `max_iterations = 5` and `min_tool_calls = 3`. In practice that leaves very little room for drafting, recovery from formatting mistakes, or a revision pass. If the model burns a turn on a malformed tool call or partial answer, it gets pushed quickly into the forced-final path.
+    | 
+    | 3. When the loop runs out of iterations, the code explicitly forces an immediate final answer and accepts whatever comes back. In [`report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [1502-1530](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1502), the fallback prompt is just “output Final Answer now,” with no requirement to expand or retry if the answer is thin. That is a direct mechanism for consistently shallow sections.
+    | 
+    | 4. Tool outputs are injected back into the prompt at full length, which can bloat context and encourage compressed final answers. [`report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [1458-1466](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1458) injects `result` wholesale into the next user message. The tool layer explicitly says many results are “完整输出，不截断”, for example panorama search in [`backend/app/services/zep_tools.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/zep_tools.py) at [250-277](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L250). So the model is often asked to write the section after consuming several large observations plus prior section context.
+    | 
+    | 5. The LLM wrapper does not inspect `finish_reason`, so truncated generations are indistinguishable from complete ones. In [`backend/app/utils/llm_client.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/utils/llm_client.py) at [35-64](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/utils/llm_client.py#L35), `chat()` returns only `message.content`; it drops completion metadata. Meanwhile section calls use `max_tokens=4096` in [`report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [1303-1306](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1303) and [1506-1509](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1506). If a provider clips output, this code will still save the clipped fragment as a valid section.
+    | 
+    | 6. The prompts themselves push toward shortness at the planning stage, which can produce underspecified sections before generation even begins. The outline prompt says content should be “精炼” and limits the report to 2-5 sections in [`report_agent.py`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py) at [570-574](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L570) and [610](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3rc6ejt1/MiroFish-main-codeIR/backend/app/services/report_agent.py#L610). That is not the main bug, but it biases the system toward shallow section plans.
+    | 
+    | **Bottom line**
+    | 
+    | The strongest causes are in the section-generation control flow, not the base model:
+    | 
+    | - no completeness validation
+    | - very tight iteration budget
+    | - forced-final fallback
+    | - huge observation payloads
+    | - no truncation detection from the LLM client
+    | 
+    | That combination can reliably produce “started but gave up” sections even with prompt tweaks.
+    | 
+    | I did not change code. If you want, I can patch this so sections only pass when they satisfy concrete checks and the generator retries intelligently instead of accepting stubs.
+
+============================================================
+SUMMARY
+============================================================
+  Benchmark    Context     Output    Tools   (+sub)     Time Status
+  ———————— —————————— —————————— ———————— ———————— ———————— ————————
+  1            536.1k       4.6k       22            103.2s OK
+  ———————— —————————— —————————— ———————— ———————— ————————
+  TOTAL        536.1k       4.6k       22            103.2s

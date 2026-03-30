@@ -580,6 +580,7 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     if result.get("status") == "no_changes":
         print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+        _ensure_agent_rules(repo_path)
         return
 
     print(f"Indexed {result.get('files_changed', 0)} changed files "
@@ -613,6 +614,280 @@ def cmd_index(args: argparse.Namespace) -> None:
         test_pats = [p for p in patterns if p.is_test_pattern]
         coverage = sum(p.member_count for p in non_test)
         print(f"  Patterns: {len(non_test)} structural ({coverage} entities), {len(test_pats)} test")
+
+    # Checkpoint WAL into main DB so the store works in sandboxed/immutable
+    # environments (e.g. Codex exec) without needing WAL file access.
+    _checkpoint_store(repo_path)
+
+    # Ensure agent discovery files exist so both Claude and Codex find CodeIR.
+    _ensure_agent_rules(repo_path)
+
+
+def _checkpoint_store(repo_path: Path) -> None:
+    """Merge WAL journal into main DB files and switch to DELETE mode.
+
+    This makes .codeir/*.db self-contained single files that can be opened
+    with ``immutable=1`` in restricted environments.
+    """
+    store_dir = repo_path / ".codeir"
+    for db_name in ("entities.db", "mapping.db"):
+        db_path = store_dir / db_name
+        if not db_path.exists():
+            continue
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("PRAGMA journal_mode = DELETE")
+            conn.close()
+        except sqlite3.OperationalError:
+            pass  # DB may already be in DELETE mode or read-only
+
+
+# ---------------------------------------------------------------------------
+# Claude / Codex discovery files
+# ---------------------------------------------------------------------------
+
+_CLAUDE_RULES_TEXT = """\
+## Access to CodeIR
+
+Commands: `bearings` | `search` | `grep` | `show` | `expand` | `callers` | `impact` | `scope`
+
+This repository includes a pre-built working model of the entire codebase — its structure, logic, and relationships — that fits in your context window.
+
+Orient via `codeir bearings` — shows project summary with a menu of category-specific views and token estimates. For large codebases, load only the categories you need.
+
+Find the central explanation first. Then identify contributing factors.
+Start from a concrete example before reasoning from abstractions.
+
+### Workflow starting points
+
+**Bug fix / investigation** — find the problem fast:
+
+1. `codeir bearings` → orient
+2. `codeir search` → find the most likely entity
+3. `codeir show` → read its Behavior IR
+4. `codeir expand` → read source, form your hypothesis
+
+**Stop here** for specific fixes. If the source confirms your hypothesis, propose the fix. For investigations, continue to map the full control flow before concluding.
+
+**Architecture / refactor** — understand before changing:
+
+1. `codeir bearings` → orient on project structure
+2. `codeir search` → find relevant entities
+3. `codeir show` → understand behavior and call relationships
+4. `codeir callers` / `codeir impact` → map what depends on your target
+5. `codeir scope` → get the full context needed for safe modification
+6. `codeir expand` → read source for entities you need to change
+
+**Integration audit** — what needs to change to add X:
+
+1. `codeir search` → find analogous existing integrations
+2. `codeir expand` → inspect their definition, registration, and dispatch path
+3. `codeir callers` → trace what else depends on those paths
+4. `codeir grep "<existing_item_name>"` → find hidden couplings, hardcoded names, allowlists, prompts, counters, and assumptions
+
+### Commands
+
+**Bearings** — orientation context with automatic tiering:
+```
+codeir bearings                    # summary + menu with token estimates
+codeir bearings [category]         # specific category (e.g., core_logic)
+codeir bearings --full             # full module map
+```
+
+**Search** — find entities by name, file, or kind:
+```
+codeir search <query> [--category <category>]
+```
+Multiple terms use OR logic with ranking. Use `--category` to filter (e.g., `--category core_logic` to skip tests).
+
+**Grep** — regex search across source files, grouped by entity:
+```
+codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
+```
+Use `--path` to scope (e.g., `--path orm/`). Use `-v` for full IR context per match.
+
+**Inspect** — view what an entity does without reading source:
+```
+codeir show <entity_id> [--level Index|Behavior]
+```
+Index = what it is. Behavior = what it does and calls. Default is Behavior.
+
+**Expand** — retrieve raw source when you need to edit or verify:
+```
+codeir expand <entity_id>
+```
+
+**Trace** — find what depends on an entity before changing it:
+```
+codeir callers <entity_id>
+```
+Results marked `~` are probable but not certain. Use `--resolution local` for same-file only.
+
+**Impact** — reverse dependency analysis (BFS through callers):
+```
+codeir impact <entity_id> [--depth N]
+```
+Default depth 2. Shows affected entities grouped by distance, with dependency chain.
+
+**Scope** — minimal context needed to safely modify an entity:
+```
+codeir scope <entity_id>
+```
+Returns the entity's callers, callees, and sibling methods (same class). Use before editing to understand what you might break and what the entity depends on.
+
+### Reading compressed representations
+
+Behavior fields:
+- `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
+- `C=` — calls made
+- `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
+- `A=` — assignment count
+- `B=` — base class
+- `#TAG` — domain and category (e.g., `#DB #CORE`)
+
+### Structural patterns
+
+CodeIR detects recurring structural patterns — groups of 30+ classes sharing the same base class and role. Patterns appear in bearings under "Structural Patterns" and in `show` output for pattern members.
+
+When you `show` a pattern member, the output highlights only how it **deviates** from its pattern — standard fields are labeled, not repeated. If you need the full IR, use `--full`.
+
+Use `--patterns` on search to see pattern markers. Run `codeir patterns` for a summary of all detected patterns.
+"""
+
+_CODEX_SKILL_TEXT = """\
+---
+name: codeir
+description: >
+  Use this skill when exploring, understanding, searching, or modifying
+  code in this repository. CodeIR provides a pre-built semantic index of
+  the entire codebase — search by name, grep by content, inspect behavior
+  summaries, trace callers and impact, and expand to source only when needed.
+  Triggers: any code navigation, architecture questions, bug investigation,
+  refactoring planning, or dependency analysis. Do NOT use for non-code tasks.
+---
+
+## CodeIR — Compiled Codebase Representation
+
+This repository has a pre-built semantic index of the entire codebase.
+Instead of reading raw source files, use CodeIR to search, inspect, and
+trace entities at the abstraction level that matches your task.
+
+For unfamiliar, cross-file, or architectural tasks, orient by running
+`codeir bearings` before search, grep, or expand.
+
+### Commands
+
+**Bearings** — orient to the repo before narrowing:
+```
+codeir bearings
+codeir bearings <category>
+codeir bearings --full
+```
+Use this first when the task is unfamiliar, cross-cutting, or architectural.
+
+**Search** — find entities by name:
+```
+codeir search <terms> [--category <cat>]
+```
+After `bearings`, prefer `--category` to narrow to the most likely area.
+
+**Grep** — regex search across source, grouped by entity:
+```
+codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
+codeir grep <pattern> --evidence [--path <dir_or_glob>] [-i]
+codeir grep <pattern> --count [--path <dir_or_glob>]
+```
+Use `--evidence` instead of `rg -n ...` followed by `sed -n ...` when you
+want exact matching lines, nearby context, and the owning entity in one call.
+
+**Inspect** — compact behavior snapshots:
+```
+codeir show <entity_id> [--level Index|Behavior]
+```
+
+**Expand** — raw source when you need to edit or verify:
+```
+codeir expand <entity_id>
+codeir expand <entity_id> --number     # with line numbers
+codeir expand <id1> <id2> <id3>        # multiple entities
+```
+
+**Callers** — what depends on an entity:
+```
+codeir callers <entity_id>
+```
+
+**Impact** — reverse dependency analysis:
+```
+codeir impact <entity_id> [--depth N]
+```
+
+**Scope** — minimal context to safely modify an entity:
+```
+codeir scope <entity_id>
+```
+
+### Workflow
+
+1. `codeir bearings` → orient
+2. `codeir search "..." --category <cat>` → find candidates
+3. `codeir show <id>` → read Behavior IR
+4. `codeir expand <id>` → verify in source, then act
+
+Use `callers`, `impact`, and `scope` when planning changes and you need
+to understand blast radius.
+
+### Reading compressed representations
+
+Behavior fields:
+- `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
+- `C=` — calls made
+- `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
+- `A=` — assignment count
+- `B=` — base class
+- `#TAG` — domain and category tags
+
+### Annotated entity lists
+
+Output from `callers`, `impact`, and `scope` includes inline triage metadata:
+```
+  CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+  GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+```
+
+Results are smart-sorted (high-caller core logic first, tests last) and
+truncated to 15 by default. Use `--all` to see the complete list.
+"""
+
+
+def _ensure_agent_rules(repo_path: Path) -> None:
+    """Create .claude/rules/CodeIR.md and .agents/skills/codeir/SKILL.md.
+
+    These files tell Claude and Codex that CodeIR is available in this repo.
+    Only written if the files don't already exist (never overwrites user edits).
+    """
+    claude_path = repo_path / ".claude" / "rules" / "CodeIR.md"
+    if not claude_path.exists():
+        claude_path.parent.mkdir(parents=True, exist_ok=True)
+        claude_path.write_text(_CLAUDE_RULES_TEXT, encoding="utf-8")
+
+    codex_path = repo_path / ".agents" / "skills" / "codeir" / "SKILL.md"
+    if not codex_path.exists():
+        codex_path.parent.mkdir(parents=True, exist_ok=True)
+        codex_path.write_text(_CODEX_SKILL_TEXT, encoding="utf-8")
+
+    # AGENTS.md at repo root — Codex reads this for skill discovery.
+    # Append if exists (don't clobber user content), create if not.
+    agents_md_path = repo_path / "AGENTS.md"
+    marker = "<!-- codeir-skill -->"
+    if agents_md_path.exists():
+        existing = agents_md_path.read_text(encoding="utf-8")
+        if marker not in existing:
+            with agents_md_path.open("a", encoding="utf-8") as f:
+                f.write(f"\n\n{marker}\n{_CODEX_SKILL_TEXT}")
+    else:
+        agents_md_path.write_text(f"{marker}\n{_CODEX_SKILL_TEXT}", encoding="utf-8")
 
 
 def cmd_search(args: argparse.Namespace) -> None:

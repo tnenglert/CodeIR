@@ -164,7 +164,8 @@ def detect_patterns(db_path: Path, min_size: int = MIN_PATTERN_SIZE) -> List[Pat
     Returns:
         List of detected Pattern objects
     """
-    conn = sqlite3.connect(db_path)
+    from index.store.db import connect as _connect
+    conn = _connect(db_path)
     conn.row_factory = sqlite3.Row
 
     # Ensure tables exist
@@ -289,7 +290,8 @@ def get_patterns(db_path: Path, category: Optional[str] = None,
     Returns:
         List of Pattern objects (empty if table doesn't exist)
     """
-    conn = sqlite3.connect(db_path)
+    from index.store.db import connect as _connect
+    conn = _connect(db_path, read_only=True)
     conn.row_factory = sqlite3.Row
 
     # Check if patterns table exists
@@ -385,7 +387,8 @@ def get_entity_pattern_details(db_path: Path, entity_id: str) -> Optional[Patter
     Returns:
         PatternDetails with pattern info and member deviations, or None if not in pattern
     """
-    conn = sqlite3.connect(db_path)
+    from index.store.db import connect as _connect
+    conn = _connect(db_path, read_only=True)
     conn.row_factory = sqlite3.Row
 
     # Check if tables exist

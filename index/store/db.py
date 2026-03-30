@@ -14,12 +14,51 @@ def load_schema(schema_path: Path) -> Dict[str, list]:
         return json.load(fh)
 
 
-def connect(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def connect(db_path: Path, read_only: bool = False) -> sqlite3.Connection:
+    """Open a SQLite connection.
+
+    Args:
+        db_path: Path to the database file.
+        read_only: If True, open in immutable mode (no locking, no WAL).
+                   Falls back through progressively more restrictive modes
+                   if the normal open fails (e.g. inside a sandbox).
+    """
+    if read_only:
+        return _connect_immutable(db_path)
+
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+    except (sqlite3.OperationalError, OSError):
+        return _connect_immutable(db_path)
+
+
+def _connect_immutable(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite DB with no locking at all.
+
+    Tries three strategies in order:
+    1. immutable=1  — no locking, no journal, no shared memory
+    2. mode=ro      — read-only with shared lock
+    3. nolock=1     — VFS-level lock bypass (last resort)
+    """
+    strategies = [
+        f"file:{db_path}?immutable=1",
+        f"file:{db_path}?mode=ro",
+        f"file:{db_path}?nolock=1",
+    ]
+    last_err = None
+    for uri in strategies:
+        try:
+            conn = sqlite3.connect(uri, uri=True)
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
+        except sqlite3.OperationalError as exc:
+            last_err = exc
+            continue
+    raise last_err  # type: ignore[misc]
 
 
 def init_db(conn: sqlite3.Connection, statements: list[str]) -> None:

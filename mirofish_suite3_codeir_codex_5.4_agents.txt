@@ -1,0 +1,617 @@
+
+############################################################
+# BENCHMARK REPORT — 2026-03-29 20:44 UTC
+############################################################
+
+————————————————————————————————————————————————————————————
+Benchmark 1/5
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    I'm getting these weird super thin report sections sometimes, like the model
+clearly started the sec...
+  Session:   019d3b4d-b225-7331-b875-b7b1bcef056e
+  Duration:  90.0s
+  Tokens:
+    Context: 583.6k
+    Output:  4.0k
+    Total:   587.6k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 18
+    TOTAL: 18
+  Commands (18):
+      1. codeir bearings
+      2. rg -n "report section|sections|writeup|stub|summary|outline|thin|shallow|section generation|report" .
+      3. codeir search report_agent --category core_logic
+      4. codeir grep "section|outline|markdown_content|retry|fallback|token|max_tokens|truncate|summary|stub" --path backend/a...
+      5. codeir grep "def plan_outline|def generate_section|def generate_report|fallback|retry|max_tokens|temperature|section_...
+      6. sed -n '520,980p' backend/app/services/report_agent.py
+      7. sed -n '980,1560p' backend/app/services/report_agent.py
+      8. sed -n '1560,1735p' backend/app/services/report_agent.py
+      9. sed -n '2094,2423p' backend/app/services/report_agent.py
+     10. rg -n "chat\(|chat_json\(|max_tokens|None|empty|truncate|content_length|section_content|Final Answer:" backend/app -g...
+     11. rg -n "class LLMClient|def chat\(|def chat_json\(|max_tokens|finish_reason|choices|content is None|response.*None|str...
+     12. sed -n '1,280p' backend/app/services/llm_client.py
+     13. sed -n '1,220p' backend/app/utils/llm_client.py
+     14. sed -n '1720,1885p' backend/app/services/report_agent.py
+     15. nl -ba backend/app/services/report_agent.py | sed -n '1270,1545p'
+     16. nl -ba backend/app/utils/llm_client.py | sed -n '1,140p'
+     17. nl -ba backend/app/services/report_agent.py | sed -n '2094,2145p'
+     18. nl -ba backend/app/services/report_agent.py | sed -n '1248,1275p'
+  CodeIR commands (4):
+      1. bearings
+         codeir bearings
+      2. search -> report_agent
+         codeir search report_agent --category core_logic
+      3. grep -> section|outline|markdown_content|retry|fallback|token|max_tokens|truncate|summary|stub
+         codeir grep "section|outline|markdown_content|retry|fallback|token|max_tokens|truncate|summary|stub" --path backend/app/services/report_agent.py -v
+      4. grep -> def plan_outline|def generate_section|def generate_report|fallback|retry|max_tokens|temperature|section_content|too short|length|word|minimum|json
+         codeir grep "def plan_outline|def generate_section|def generate_report|fallback|retry|max_tokens|temperature|section_content|too short|length|word|minimum|json" --path backend/app/services/report_agent.py
+  Final response (3585 chars):
+    | Yes. The strongest cause is in the section-generation loop, not the prompt text.
+    | 
+    | Findings:
+    | 
+    | 1. High confidence: partial model output is accepted as a completed section.
+    | In [`backend/app/services/report_agent.py:1488`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1488), once the model has made at least 3 tool calls, any response that has neither a tool call nor `Final Answer:` is treated as the final section:
+    | `final_answer = response.strip()`
+    | That means if the model starts writing, gets cut off, or drifts into an incomplete answer, the code still saves it as success. That matches “it clearly started the section but gave up”.
+    | 
+    | 2. High confidence: forced-finalization also accepts unfinished text.
+    | At [`backend/app/services/report_agent.py:1502`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1502), after only 5 total ReACT iterations, the code forces one last response. If that last response does not contain `Final Answer:`, it still uses the raw response as section content at [`backend/app/services/report_agent.py:1516`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1516). So the system has two separate “accept incomplete text” paths.
+    | 
+    | 3. High confidence: the LLM client ignores truncation state entirely.
+    | [`backend/app/utils/llm_client.py:64`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/utils/llm_client.py#L64) only reads `response.choices[0].message.content` and returns it. It never checks `finish_reason`. So if the provider stops for length, the caller gets a syntactically valid but incomplete fragment and treats it as normal output.
+    | 
+    | 4. Medium confidence: context pressure makes truncation more likely for later sections.
+    | The section loop keeps stuffing prior sections into the prompt, up to 4000 chars each, at [`backend/app/services/report_agent.py:1262`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1262), and also appends full tool results back into the conversation at [`backend/app/services/report_agent.py:1456`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1456). With `max_tokens=4096` per call at [`backend/app/services/report_agent.py:1303`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1303), later sections are more likely to have less room for a full writeup.
+    | 
+    | 5. Low confidence: persistence is not the culprit.
+    | Saving only cleans headings and writes whatever content it received; it does not shorten body text. See [`backend/app/services/report_agent.py:2115`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_3fgbv_a5/MiroFish-main-codeIR/backend/app/services/report_agent.py#L2115). So the thin sections are almost certainly generated upstream, not trimmed during save.
+    | 
+    | Net: this looks like a control-flow bug around incomplete LLM outputs, likely amplified by output-length truncation and growing prompt/context size.
+    | 
+    | If you want, I can patch this so sections are only accepted when they pass explicit completeness checks and truncated generations trigger a retry instead of being saved.
+
+————————————————————————————————————————————————————————————
+Benchmark 2/5
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    Users keep asking why the final report can't include agent interviews after
+the simulation is alread...
+  Session:   019d3b4f-25f7-7940-a510-f938db0ceb7f
+  Duration:  152.4s
+  Tokens:
+    Context: 993.6k
+    Output:  7.3k
+    Total:   1000.9k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 41
+    TOTAL: 41
+  Commands (41):
+      1. codeir bearings
+      2. codeir search interview_agents
+      3. codeir search report generation
+      4. codeir grep "interview_agents|interview" --path backend/app/services/report_agent.py -v
+      5. codeir show DFNTLS
+      6. codeir show EXCTTL
+      7. codeir expand EXCTTL
+      8. codeir expand INTRVWGNTS
+      9. codeir show INTRVWGNTSBT.02
+     10. codeir expand INTRVWGNTSBT.02
+     11. codeir grep "generate_report|ReportAgent\(|report_agent" --path backend/app -v
+     12. codeir grep "cleanup|close|shutdown|end.*sim|simulation.*ended|stop.*simulation|env_alive" --path backend/app/service...
+     13. codeir expand GNRTRPRT
+     14. codeir expand RNGNRT
+     15. codeir expand STPSMLTN.02
+     16. codeir expand CLSSMLTNNV.02
+     17. codeir expand DFNTLS
+     18. codeir expand GNRTRPRT.02
+     19. codeir grep "interview_agents" --path backend/app/services/report_agent.py -C 8
+     20. codeir grep "TOOL_DESC_INTERVIEW_AGENTS|重要|环境处于运行状态|运行状态" --path backend/app/services/report_agent.py -C 6
+     21. codeir grep "check_env_alive|env_alive|heartbeat|alive" --path backend/app/services -v
+     22. codeir grep "simulation_id.*status|runner_status|STOPPED|COMPLETED|completed_at" --path backend/app -v
+     23. codeir expand CLSSMLTNNV
+     24. codeir expand CHCKRPRTSTTS
+     25. codeir expand CHTWTHRPRTGN
+     26. codeir grep "generate report|报告|interview_unlocked|close_simulation_env|completed" --path frontend -v
+     27. rg -n "interview_unlocked|generateReport|/api/report/generate|close_simulation_env|report" .
+     28. codeir expand CHCKNVLV
+     29. codeir grep "_execute_tool\(|log_tool_result|工具执行失败|Observation|observation" --path backend/app/services/report_agent...
+     30. sed -n '1300,1455p' backend/app/services/report_agent.py
+     31. sed -n '1460,1535p' backend/app/services/report_agent.py
+     32. codeir grep "_update_env_status|env_status|dead|closed|alive" --path backend/app/services/simulation_ipc.py -C 6
+     33. sed -n '300,430p' backend/app/services/simulation_ipc.py
+     34. sed -n '430,560p' backend/app/services/simulation_ipc.py
+     35. rg -n "ipc_server\.stop\(|SimulationIPCServer\(|send_close_env|CLOSE_ENV|env_status" backend/app -g '!**/.codeir/**'
+     36. rg -n "close_env|ipc" simulations backend -g '!**/.codeir/**'
+     37. sed -n '1590,1640p' backend/scripts/run_parallel_simulation.py
+     38. sed -n '668,706p' backend/scripts/run_twitter_simulation.py
+     39. sed -n '660,694p' backend/scripts/run_reddit_simulation.py
+     40. rg -n "wait_for_commands" backend/app/services/simulation_runner.py backend/scripts/run_parallel_simulation.py backen...
+     41. sed -n '312,430p' backend/app/services/simulation_runner.py
+  CodeIR commands (29):
+      1. bearings
+         codeir bearings
+      2. search -> interview_agents
+         codeir search interview_agents
+      3. search -> report generation
+         codeir search report generation
+      4. grep -> interview_agents|interview
+         codeir grep "interview_agents|interview" --path backend/app/services/report_agent.py -v
+      5. show -> DFNTLS
+         codeir show DFNTLS
+      6. show -> EXCTTL
+         codeir show EXCTTL
+      7. expand -> EXCTTL
+         codeir expand EXCTTL
+      8. expand -> INTRVWGNTS
+         codeir expand INTRVWGNTS
+      9. show -> INTRVWGNTSBT.02
+         codeir show INTRVWGNTSBT.02
+     10. expand -> INTRVWGNTSBT.02
+         codeir expand INTRVWGNTSBT.02
+     11. grep -> generate_report|ReportAgent\(|report_agent
+         codeir grep "generate_report|ReportAgent\(|report_agent" --path backend/app -v
+     12. grep -> cleanup|close|shutdown|end.*sim|simulation.*ended|stop.*simulation|env_alive
+         codeir grep "cleanup|close|shutdown|end.*sim|simulation.*ended|stop.*simulation|env_alive" --path backend/app/services/simulation_runner.py -v
+     13. expand -> GNRTRPRT
+         codeir expand GNRTRPRT
+     14. expand -> RNGNRT
+         codeir expand RNGNRT
+     15. expand -> STPSMLTN.02
+         codeir expand STPSMLTN.02
+     16. expand -> CLSSMLTNNV.02
+         codeir expand CLSSMLTNNV.02
+     17. expand -> DFNTLS
+         codeir expand DFNTLS
+     18. expand -> GNRTRPRT.02
+         codeir expand GNRTRPRT.02
+     19. grep -> interview_agents
+         codeir grep "interview_agents" --path backend/app/services/report_agent.py -C 8
+     20. grep -> TOOL_DESC_INTERVIEW_AGENTS|重要|环境处于运行状态|运行状态
+         codeir grep "TOOL_DESC_INTERVIEW_AGENTS|重要|环境处于运行状态|运行状态" --path backend/app/services/report_agent.py -C 6
+     21. grep -> check_env_alive|env_alive|heartbeat|alive
+         codeir grep "check_env_alive|env_alive|heartbeat|alive" --path backend/app/services -v
+     22. grep -> simulation_id.*status|runner_status|STOPPED|COMPLETED|completed_at
+         codeir grep "simulation_id.*status|runner_status|STOPPED|COMPLETED|completed_at" --path backend/app -v
+     23. expand -> CLSSMLTNNV
+         codeir expand CLSSMLTNNV
+     24. expand -> CHCKRPRTSTTS
+         codeir expand CHCKRPRTSTTS
+     25. expand -> CHTWTHRPRTGN
+         codeir expand CHTWTHRPRTGN
+     26. grep -> generate report|报告|interview_unlocked|close_simulation_env|completed
+         codeir grep "generate report|报告|interview_unlocked|close_simulation_env|completed" --path frontend -v
+     27. expand -> CHCKNVLV
+         codeir expand CHCKNVLV
+     28. grep -> _execute_tool\(|log_tool_result|工具执行失败|Observation|observation
+         codeir grep "_execute_tool\(|log_tool_result|工具执行失败|Observation|observation" --path backend/app/services/report_agent.py -C 8
+     29. grep -> _update_env_status|env_status|dead|closed|alive
+         codeir grep "_update_env_status|env_status|dead|closed|alive" --path backend/app/services/simulation_ipc.py -C 6
+  Final response (4578 chars):
+    | **Findings**
+    | 
+    | 1. `interview_agents` is not a retrospective report tool. It only works against a live simulation environment.
+    |    `ReportAgent` calls `self.zep_tools.interview_agents(...)` in [`backend/app/services/report_agent.py:1007`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1007), and that method explicitly says the environment must still be running in [`backend/app/services/zep_tools.py:1272`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L1272). The real gate is [`SimulationRunner.interview_agents_batch`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/simulation_runner.py#L1487), which rejects the call if `check_env_alive()` is false. `check_env_alive()` just reads `env_status.json` and requires `"status": "alive"` in [`backend/app/services/simulation_ipc.py:270`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/simulation_ipc.py#L270).
+    | 
+    | 2. A simulation can be “finished” but still interviewable for a while.
+    |    The runner scripts default to `wait_for_commands=True`, so after the simulation loop completes they enter a post-run command mode, mark the env `alive`, and explicitly support `interview`, `batch_interview`, and `close_env` in [`backend/scripts/run_parallel_simulation.py:1596`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/scripts/run_parallel_simulation.py#L1596), [`backend/scripts/run_twitter_simulation.py:671`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/scripts/run_twitter_simulation.py#L671), and [`backend/scripts/run_reddit_simulation.py:659`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/scripts/run_reddit_simulation.py#L659). So “after the sim ended” is only valid if the env is still in that waiting mode.
+    | 
+    | 3. Once the env is closed or stopped, report generation still advertises interviews anyway.
+    |    The report agent always exposes `interview_agents` in [`backend/app/services/report_agent.py:918`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/report_agent.py#L918), and the generate-report API does not check whether the env is alive before starting in [`backend/app/api/report.py:25`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/api/report.py#L25). If the LLM chooses that tool after the env is gone, `_execute_tool` returns a failure string instead of failing the report in [`backend/app/services/report_agent.py:955`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/report_agent.py#L955), and the ReAct loop feeds that back as an observation in [`backend/app/services/report_agent.py:1432`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1432). That is why it feels flaky: the request is invalid, but the system degrades into a soft tool failure instead of a clear hard stop.
+    | 
+    | 4. There is also a UI/API contract mismatch that reinforces the wrong expectation.
+    |    `check_report_status` sets `interview_unlocked = report.completed` in [`backend/app/api/report.py:703`](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_5j1qj10z/MiroFish-main-codeIR/backend/app/api/report.py#L703). That unlock is tied to report completion, not env liveness, even though env liveness is what actually controls interviews.
+    | 
+    | **Conclusion**
+    | 
+    | This is mostly not a broken interview backend. It is an invalid request after the environment has been closed, combined with misleading product wiring. Interviews are only possible during the post-run “waiting for commands” window. After `close_env` or `stop`, they are impossible by design.
+    | 
+    | **What I’d change**
+    | 
+    | - Hide or remove `interview_agents` from report generation when `check_env_alive(simulation_id)` is false.
+    | - Add a preflight in report/chat APIs so users get a direct message like “live interviews unavailable because the simulation environment was closed.”
+    | - If you want interviews in reports after shutdown, persist interview transcripts before closing the env, or keep the env alive until report generation finishes.
+
+————————————————————————————————————————————————————————————
+Benchmark 3/5
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    I'm wondering if our report agent is being too slow and over-ceremonial. It
+feels like everything ha...
+  Session:   019d3b51-8da1-7c01-8aec-85fada233f1c
+  Duration:  169.3s
+  Tokens:
+    Context: 1151.9k
+    Output:  8.0k
+    Total:   1159.9k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 49
+    TOTAL: 49
+  Commands (49):
+      1. codeir bearings
+      2. rg -n "report agent|report_agent|ReportAgent|reporting agent|reporting" .
+      3. codeir search report_agent --category core_logic
+      4. codeir bearings core_logic
+      5. codeir grep "ReportAgent|ReportManager|ReportStatus|generate_report|generate" --path backend/app/services/report_agen...
+      6. codeir show GNRTRPRT.02
+      7. codeir scope GNRTRPRT.02
+      8. codeir show GNRTSCTNRCT
+      9. codeir show CHAT
+     10. codeir expand GNRTRPRT.02
+     11. codeir expand GNRTSCTNRCT
+     12. codeir search "def generate_report" --category router
+     13. codeir grep "def generate_report|generate_report\(" --path backend/app/api/report.py -v
+     14. codeir expand GNRTRPRT
+     15. codeir search TaskManager --category router
+     16. codeir grep "TaskManager|complete_task|update_task_progress|create_task" --path backend/app/api -v
+     17. codeir grep "def _execute_tool|def plan_outline|class ReportLogger|class ReportConsoleLogger|def save_section|def upd...
+     18. codeir grep "class TaskManager|def update_task|def create_task|def complete_task|def fail_task|def get_task" --path b...
+     19. codeir grep "class LLMClient|def chat\(" --path backend/app/services -v
+     20. codeir grep "class LLMClient|def chat\(" --path backend/app -v
+     21. codeir expand EXCTTL
+     22. codeir expand PLNTLN
+     23. codeir expand TSKMNGR
+     24. codeir expand SVSCTN
+     25. codeir expand UPDTPRGRSS
+     26. codeir expand GTGNRTDSCTNS
+     27. codeir expand ASSMBLFLLRPR
+     28. codeir search ZepToolsService --category core_logic
+     29. codeir grep "class ZepToolsService|def insight_forge|def panorama_search|def quick_search|def interview_agents|get_si...
+     30. codeir expand LLMCLNT
+     31. codeir callers RPRTGNT
+     32. codeir expand RPRTLGGR
+     33. codeir expand RPRTCNSLLGGR
+     34. codeir expand INTRVWGNTS
+     35. codeir expand GTSMLTNCNTXT
+     36. nl -ba backend/app/services/report_agent.py | sed -n '1136,1765p'
+     37. nl -ba backend/app/services/report_agent.py | sed -n '35,385p'
+     38. nl -ba backend/app/services/report_agent.py | sed -n '2094,2297p'
+     39. nl -ba backend/app/api/report.py | sed -n '25,171p'
+     40. nl -ba backend/app/utils/llm_client.py | sed -n '14,102p'
+     41. nl -ba backend/app/services/zep_tools.py | sed -n '890,1095p'
+     42. nl -ba backend/app/services/zep_tools.py | sed -n '1237,1485p'
+     43. nl -ba backend/app/models/task.py | sed -n '54,183p'
+     44. codeir expand GTGNRTSTTS
+     45. rg -n "current_section|completed_sections|progress_detail|generate/status|report_id|task_id" frontend backend/app/api...
+     46. nl -ba backend/app/api/report.py | sed -n '564,640p'
+     47. rg -n "current_section|completed_sections" frontend/src backend/app/api/report.py
+     48. rg -n "agent-log|console-log|section_complete|/sections|/progress|report progress|reportId" frontend/src
+     49. codeir impact GNRTRPRT.02 --depth 2
+  CodeIR commands (36):
+      1. bearings
+         codeir bearings
+      2. search -> report_agent
+         codeir search report_agent --category core_logic
+      3. bearings -> core_logic
+         codeir bearings core_logic
+      4. grep -> ReportAgent|ReportManager|ReportStatus|generate_report|generate
+         codeir grep "ReportAgent|ReportManager|ReportStatus|generate_report|generate" --path backend/app/services/report_agent.py -v
+      5. show -> GNRTRPRT.02
+         codeir show GNRTRPRT.02
+      6. scope -> GNRTRPRT.02
+         codeir scope GNRTRPRT.02
+      7. show -> GNRTSCTNRCT
+         codeir show GNRTSCTNRCT
+      8. show -> CHAT
+         codeir show CHAT
+      9. expand -> GNRTRPRT.02
+         codeir expand GNRTRPRT.02
+     10. expand -> GNRTSCTNRCT
+         codeir expand GNRTSCTNRCT
+     11. search -> def generate_report
+         codeir search "def generate_report" --category router
+     12. grep -> def generate_report|generate_report\(
+         codeir grep "def generate_report|generate_report\(" --path backend/app/api/report.py -v
+     13. expand -> GNRTRPRT
+         codeir expand GNRTRPRT
+     14. search -> TaskManager
+         codeir search TaskManager --category router
+     15. grep -> TaskManager|complete_task|update_task_progress|create_task
+         codeir grep "TaskManager|complete_task|update_task_progress|create_task" --path backend/app/api -v
+     16. grep -> def _execute_tool|def plan_outline|class ReportLogger|class ReportConsoleLogger|def save_section|def update_progress|def assemble_full_report|get_generated_sections
+         codeir grep "def _execute_tool|def plan_outline|class ReportLogger|class ReportConsoleLogger|def save_section|def update_progress|def assemble_full_report|get_generated_sections" --path backend/app/services/report_agent.py -v
+     17. grep -> class TaskManager|def update_task|def create_task|def complete_task|def fail_task|def get_task
+         codeir grep "class TaskManager|def update_task|def create_task|def complete_task|def fail_task|def get_task" --path backend/app -v
+     18. grep -> class LLMClient|def chat\(
+         codeir grep "class LLMClient|def chat\(" --path backend/app/services -v
+     19. grep -> class LLMClient|def chat\(
+         codeir grep "class LLMClient|def chat\(" --path backend/app -v
+     20. expand -> EXCTTL
+         codeir expand EXCTTL
+     21. expand -> PLNTLN
+         codeir expand PLNTLN
+     22. expand -> TSKMNGR
+         codeir expand TSKMNGR
+     23. expand -> SVSCTN
+         codeir expand SVSCTN
+     24. expand -> UPDTPRGRSS
+         codeir expand UPDTPRGRSS
+     25. expand -> GTGNRTDSCTNS
+         codeir expand GTGNRTDSCTNS
+     26. expand -> ASSMBLFLLRPR
+         codeir expand ASSMBLFLLRPR
+     27. search -> ZepToolsService
+         codeir search ZepToolsService --category core_logic
+     28. grep -> class ZepToolsService|def insight_forge|def panorama_search|def quick_search|def interview_agents|get_simulation_context
+         codeir grep "class ZepToolsService|def insight_forge|def panorama_search|def quick_search|def interview_agents|get_simulation_context" --path backend/app -v
+     29. expand -> LLMCLNT
+         codeir expand LLMCLNT
+     30. callers -> RPRTGNT
+         codeir callers RPRTGNT
+     31. expand -> RPRTLGGR
+         codeir expand RPRTLGGR
+     32. expand -> RPRTCNSLLGGR
+         codeir expand RPRTCNSLLGGR
+     33. expand -> INTRVWGNTS
+         codeir expand INTRVWGNTS
+     34. expand -> GTSMLTNCNTXT
+         codeir expand GTSMLTNCNTXT
+     35. expand -> GTGNRTSTTS
+         codeir expand GTGNRTSTTS
+     36. impact -> GNRTRPRT.02
+         codeir impact GNRTRPRT.02 --depth 2
+  Final response (6676 chars):
+    | The report path is mostly serialized by design, not by the HTTP layer. The API already kicks report generation onto a background thread and returns immediately, so the “plodding” part is inside one report job, not request handling ([report.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/api/report.py#L112), [report.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/api/report.py#L124), [report.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/api/report.py#L149)). Inside that job, it does three strictly ordered phases: plan outline, then generate each section in a `for` loop, then assemble the final report ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1598), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1636), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1701)).
+    | 
+    | What it is “waiting for” today:
+    | - Each later section gets all prior generated sections as prompt context, so section `N+1` depends on section `N` having finished ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1262), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1656)).
+    | - Inside one section, the ReACT loop is inherently sequential: one LLM reply, maybe one tool call, then feed the observation back into the next LLM turn. It even enforces “only execute the first tool call” per turn ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1294), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1418)).
+    | - The planning phase is also a gate, since section generation starts only after `plan_outline()` returns ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1611)).
+    | - Some tools are themselves heavy and synchronous. `insight_forge` does multiple sub-searches in sequence ([zep_tools.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L981), [zep_tools.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L996)); `interview_agents` is expensive but already batches interviews and uses both platforms together, so that part is less ceremonial than it looks ([zep_tools.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L1365), [zep_tools.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L1378)).
+    | 
+    | If you make more happen at once, the first thing that changes is report quality semantics, not just runtime. Parallel section generation breaks the current “later sections can see earlier sections” coherence model, because `previous_sections` would be partial, stale, or empty. That likely means more repetition, inconsistent terminology, and weaker narrative flow unless you replace that dependency with a different shared context model. Also, progress/logging are currently single-writer shaped: `progress.json` has one `current_section`, one progress number, and gets overwritten wholesale on each update with no report-level lock ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L2199), [report.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/api/report.py#L564)). `agent_log.jsonl` is append-only with no synchronization in `ReportLogger`, so interleaving is acceptable, but log order would stop implying execution order ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L66), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L95)). The section files themselves are separate, so they’re relatively safe, and final assembly already reads whatever section files exist in sorted order ([report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L2122), [report_agent.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/services/report_agent.py#L2283)).
+    | 
+    | The safest concurrency increases in this codebase are:
+    | - Keep `plan_outline()` serial.
+    | - Run independent section drafts in parallel only if you stop relying on `previous_sections`, or do a second serial “harmonization/edit pass”.
+    | - Parallelize inside tools like `insight_forge` sub-query search, where the dependency is weaker than in the ReACT loop.
+    | - Redesign progress from `current_section` to `active_sections[]`, and aggregate task progress instead of treating one number/message as the whole truth.
+    | - Audit shared clients before fan-out. `LLMClient` wraps one OpenAI client instance with no concurrency guard; that may be fine, but this codebase does not currently prove it ([llm_client.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/utils/llm_client.py#L17), [llm_client.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_jp4dxn96/MiroFish-main-codeIR/backend/app/utils/llm_client.py#L35)).
+    | 
+    | So the short answer is: more could happen at once, but the current code is waiting on real dependencies in section coherence and ReACT turn-taking. If you parallelize naively, you mostly break coherence, truthful progress reporting, and some observability assumptions. If you want, I can turn this into a concrete refactor plan for “parallel section drafts + serial final synthesis,” which looks like the best fit for this codebase.
+
+————————————————————————————————————————————————————————————
+Benchmark 4/5
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    We want to add one more report-generation tool that calls an external
+analytics API. Would that be c...
+  Session:   019d3b54-370f-7a61-847f-280f463b0e46
+  Duration:  111.1s
+  Tokens:
+    Context: 579.0k
+    Output:  5.2k
+    Total:   584.2k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 33
+    update_plan: 1
+    TOTAL: 34
+  Commands (33):
+      1. codeir bearings
+      2. rg -n "report|analytics|tool" -S .
+      3. codeir search report_agent --category core_logic
+      4. codeir search zep_tools --category core_logic
+      5. codeir grep "tool_name|tools\s*=|available_tools|function_call|tool_call|deep_insight|quick_search|graph_stats|entity...
+      6. codeir show DFNTLS
+      7. codeir show EXCTTL
+      8. codeir show GNRTSCTNRCT
+      9. codeir show CHAT
+     10. sed -n '680,1125p' backend/app/services/report_agent.py
+     11. sed -n '1220,1535p' backend/app/services/report_agent.py
+     12. sed -n '1766,1885p' backend/app/services/report_agent.py
+     13. sed -n '400,1320p' backend/app/services/zep_tools.py
+     14. sed -n '1,140p' backend/app/config.py
+     15. rg -n "ReportAgent\(|generate_report\(|chat\(|agent_log|console_log|report_bp|Blueprint\('report'" backend/app -S
+     16. sed -n '480,560p' frontend/src/components/Step4Report.vue
+     17. sed -n '1,240p' backend/app/api/report.py
+     18. rg -n "_get_tools_description|tools_description|VALID_TOOL_NAMES|all_tools =|TOOL_DESC_" backend/app/services/report_...
+     19. sed -n '1,220p' backend/app/services/report_agent.py
+     20. sed -n '1125,1225p' backend/app/services/report_agent.py
+     21. ls backend/app/services
+     22. sed -n '1,220p' backend/pyproject.toml
+     23. rg -n "requests|httpx|aiohttp|urllib3" backend/app backend/pyproject.toml -S
+     24. sed -n '930,1010p' backend/app/api/report.py
+     25. sed -n '978,1045p' backend/app/api/report.py
+     26. nl -ba backend/app/services/report_agent.py | sed -n '475,535p'
+     27. nl -ba backend/app/services/report_agent.py | sed -n '883,1135p'
+     28. nl -ba backend/app/services/report_agent.py | sed -n '1255,1465p'
+     29. nl -ba backend/app/services/report_agent.py | sed -n '1766,1882p'
+     30. nl -ba backend/app/services/zep_tools.py | sed -n '400,470p'
+     31. nl -ba backend/app/config.py | sed -n '20,75p'
+     32. nl -ba frontend/src/components/Step4Report.vue | sed -n '495,540p'
+     33. nl -ba backend/app/api/report.py | sed -n '930,1010p'
+  CodeIR commands (8):
+      1. bearings
+         codeir bearings
+      2. search -> report_agent
+         codeir search report_agent --category core_logic
+      3. search -> zep_tools
+         codeir search zep_tools --category core_logic
+      4. grep -> tool_name|tools\s*=|available_tools|function_call|tool_call|deep_insight|quick_search|graph_stats|entity_query|panorama|agent_interview
+         codeir grep "tool_name|tools\s*=|available_tools|function_call|tool_call|deep_insight|quick_search|graph_stats|entity_query|panorama|agent_interview" --path backend/app/services/
+      5. show -> DFNTLS
+         codeir show DFNTLS
+      6. show -> EXCTTL
+         codeir show EXCTTL
+      7. show -> GNRTSCTNRCT
+         codeir show GNRTSCTNRCT
+      8. show -> CHAT
+         codeir show CHAT
+  Final response (4695 chars):
+    | It’s not especially complicated, but it is not a one-line plug-in. In this codebase, report tools are hardcoded into the `ReportAgent`, so adding an external analytics API is a moderate backend change with a small optional frontend follow-up.
+    | 
+    | The required backend change points are:
+    | 
+    | - Add the actual API client logic somewhere under `backend/app/services`. Today all report tools are funneled through [`backend/app/services/report_agent.py:918`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L918) and mostly implemented on [`backend/app/services/zep_tools.py:400`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L400). For a non-Zep analytics API, I would probably add a separate service instead of overloading `ZepToolsService`.
+    | - Register the new tool in [`backend/app/services/report_agent.py:918`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L918) by extending `_define_tools()` with name, description, and parameter schema.
+    | - Add execution dispatch in [`backend/app/services/report_agent.py:955`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L955) so the tool name actually calls the external API and normalizes the result to text.
+    | - Add the tool name to the parser allowlist in [`backend/app/services/report_agent.py:1064`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1064), otherwise bare JSON tool calls from the LLM will be rejected.
+    | - Update the ReACT tool-usage guidance in [`backend/app/services/report_agent.py:475`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L475) and the section-generation loop in [`backend/app/services/report_agent.py:1289`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1289), because the prompt currently teaches the model only four tool names and tracks “unused tools” from a hardcoded set.
+    | - The chat mode also inherits the same tool catalog via [`backend/app/services/report_agent.py:1766`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/services/report_agent.py#L1766), so the new tool would automatically become available there once the catalog and dispatcher are updated.
+    | 
+    | Likely additional plumbing:
+    | 
+    | - Add env/config for the external API key, base URL, timeouts, etc. in [`backend/app/config.py:20`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/config.py#L20). Right now config only knows about LLM and Zep credentials.
+    | - Add an HTTP client dependency. I didn’t find `requests`, `httpx`, or `aiohttp` in [`backend/pyproject.toml:1`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/pyproject.toml#L1), so a new external API probably means adding one.
+    | - If you want a direct debug endpoint for the tool, mirror the existing ad hoc tool routes in [`backend/app/api/report.py:930`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/backend/app/api/report.py#L930). This is optional; the report agent itself does not require a new Flask route.
+    | - If you want the report-generation UI to display the new tool with a friendly badge/icon, add it to [`frontend/src/components/Step4Report.vue:495`](file:///var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_6_2kxz40/MiroFish-main-codeIR/frontend/src/components/Step4Report.vue#L495). Without that, logs will still work, but the tool will render with the generic fallback style.
+    | 
+    | So: moderate effort, mostly localized, no major architectural rewrite. The main reason it’s more than “just add one function” is that tool registration, prompting, validation, and execution are duplicated in a few places rather than centralized behind one registry.
+    | 
+    | One design note: if you think you may add several more tools later, this is the moment to refactor `ReportAgent` so `self.tools`, `VALID_TOOL_NAMES`, the prompt examples, and `_execute_tool()` all derive from one registry. That would make the next tool cheap instead of repetitive.
+    | 
+    | I didn’t make code changes or run tests; this was a structural review.
+
+————————————————————————————————————————————————————————————
+Benchmark 5/5
+  Backend:   codex
+  Model:     gpt-5.4
+  Prompt:    When a simulation finishes and I search report features, everything from the
+last session isn't ther...
+  Session:   019d3b55-fd11-76f3-88b9-27338799d80a
+  Duration:  107.1s
+  Tokens:
+    Context: 670.3k
+    Output:  5.0k
+    Total:   675.3k
+    API calls: 0
+  Tool calls (parent):
+    exec_command: 36
+    TOTAL: 36
+  Commands (36):
+      1. codeir bearings
+      2. rg -n "report feature|report features|simulation finishes|simulation complete|search report|index" -S .
+      3. codeir bearings core_logic
+      4. codeir search report --category core_logic
+      5. codeir grep "feature|embedding|vector|search" --path backend/app -i
+      6. codeir search simulation_manager --category core_logic
+      7. codeir search zep_graph_memory_updater --category core_logic
+      8. codeir grep "complete|completed|finish|finished|background|thread|executor|submit|future|zep|memory updater|index" --...
+      9. codeir show ZPGRPHMMRYPD
+     10. codeir show WRKRLP
+     11. codeir show STOP.02
+     12. codeir show SRCHGRPH
+     13. codeir expand WRKRLP
+     14. codeir expand STOP.02
+     15. codeir expand SRCHGRPH
+     16. codeir expand SRCHGRPHTL
+     17. codeir expand FLSHRMNNG
+     18. codeir expand SNDBTCHCTVTS
+     19. codeir expand ADDCTVTY
+     20. codeir expand STRT.02
+     21. codeir search SimulationRunner --category core_logic
+     22. codeir callers STOP.02
+     23. codeir callers STRT.02
+     24. codeir search start_simulation --category core_logic
+     25. codeir expand STRTSMLTN.02
+     26. codeir search generate_report --category router
+     27. codeir expand GNRTRPRT
+     28. codeir search _monitor_simulation --category core_logic
+     29. codeir expand MNTRSMLTN
+     30. codeir grep "ZepGraphMemoryManager|graph memory|memory update|create_updater|stop_updater|stop_all|_graph_memory_enab...
+     31. codeir expand RDCTNLG
+     32. sed -n '201,470p' backend/app/services/zep_graph_memory_updater.py
+     33. sed -n '579,686p' backend/app/services/simulation_runner.py
+     34. sed -n '341,395p' backend/app/services/graph_builder.py
+     35. sed -n '478,576p' backend/app/services/simulation_runner.py
+     36. sed -n '930,975p' backend/app/api/report.py
+  CodeIR commands (30):
+      1. bearings
+         codeir bearings
+      2. bearings -> core_logic
+         codeir bearings core_logic
+      3. search -> report
+         codeir search report --category core_logic
+      4. grep -> feature|embedding|vector|search
+         codeir grep "feature|embedding|vector|search" --path backend/app -i
+      5. search -> simulation_manager
+         codeir search simulation_manager --category core_logic
+      6. search -> zep_graph_memory_updater
+         codeir search zep_graph_memory_updater --category core_logic
+      7. grep -> complete|completed|finish|finished|background|thread|executor|submit|future|zep|memory updater|index
+         codeir grep "complete|completed|finish|finished|background|thread|executor|submit|future|zep|memory updater|index" --path backend/app/services -i
+      8. show -> ZPGRPHMMRYPD
+         codeir show ZPGRPHMMRYPD
+      9. show -> WRKRLP
+         codeir show WRKRLP
+     10. show -> STOP.02
+         codeir show STOP.02
+     11. show -> SRCHGRPH
+         codeir show SRCHGRPH
+     12. expand -> WRKRLP
+         codeir expand WRKRLP
+     13. expand -> STOP.02
+         codeir expand STOP.02
+     14. expand -> SRCHGRPH
+         codeir expand SRCHGRPH
+     15. expand -> SRCHGRPHTL
+         codeir expand SRCHGRPHTL
+     16. expand -> FLSHRMNNG
+         codeir expand FLSHRMNNG
+     17. expand -> SNDBTCHCTVTS
+         codeir expand SNDBTCHCTVTS
+     18. expand -> ADDCTVTY
+         codeir expand ADDCTVTY
+     19. expand -> STRT.02
+         codeir expand STRT.02
+     20. search -> SimulationRunner
+         codeir search SimulationRunner --category core_logic
+     21. callers -> STOP.02
+         codeir callers STOP.02
+     22. callers -> STRT.02
+         codeir callers STRT.02
+     23. search -> start_simulation
+         codeir search start_simulation --category core_logic
+     24. expand -> STRTSMLTN.02
+         codeir expand STRTSMLTN.02
+     25. search -> generate_report
+         codeir search generate_report --category router
+     26. expand -> GNRTRPRT
+         codeir expand GNRTRPRT
+     27. search -> _monitor_simulation
+         codeir search _monitor_simulation --category core_logic
+     28. expand -> MNTRSMLTN
+         codeir expand MNTRSMLTN
+     29. grep -> ZepGraphMemoryManager|graph memory|memory update|create_updater|stop_updater|stop_all|_graph_memory_enabled
+         codeir grep "ZepGraphMemoryManager|graph memory|memory update|create_updater|stop_updater|stop_all|_graph_memory_enabled" --path backend/app/services/simulation_runner.py -i
+     30. expand -> RDCTNLG
+         codeir expand RDCTNLG
+  Final response (2423 chars):
+    | What you’re seeing is a real timing gap, not missing data.
+    | 
+    | The simulation is marked `COMPLETED` before the last session’s activity is fully searchable in the graph:
+    | 
+    | - In [simulation_runner.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/simulation_runner.py#L509), the runner sets `runner_status = COMPLETED` as soon as the process exits.
+    | - The graph-memory updater is only stopped and flushed afterward in the `finally` block at [simulation_runner.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/simulation_runner.py#L552).
+    | - That updater is asynchronous and batches actions in groups of 5 with background sending at [zep_graph_memory_updater.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/zep_graph_memory_updater.py#L213), [zep_graph_memory_updater.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/zep_graph_memory_updater.py#L359), and [zep_graph_memory_updater.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/zep_graph_memory_updater.py#L390).
+    | - Report search hits Zep immediately via [report.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/api/report.py#L930) and [zep_tools.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/zep_tools.py#L464), with no wait for ingestion/indexing.
+    | 
+    | There’s a second lag too: even after `graph.add(...)`, the code does not wait for Zep to finish processing those new episodes. The codebase already has a “wait until processed” pattern in [graph_builder.py](/var/folders/nm/n40j16wd57j7_2dhrgmnndsw0000gn/T/benchmark_repo_kn8xf7ck/MiroFish-main-codeIR/backend/app/services/graph_builder.py#L341), but the simulation updater does not use it.
+    | 
+    | So the behavior is:
+    | 
+    | 1. simulation finishes
+    | 2. UI/backend says “completed”
+    | 3. last actions are still being flushed to Zep
+    | 4. Zep is still indexing them
+    | 5. report feature search looks incomplete, then fills in later
+    | 
+    | If you want, I can patch this so “simulation completed” only becomes report-search-ready after the final flush and Zep processing are done.
+
+============================================================
+SUMMARY
+============================================================
+  Benchmark    Context     Output    Tools   (+sub)     Time Status
+  ———————— —————————— —————————— ———————— ———————— ———————— ————————
+  1            583.6k       4.0k       18             90.0s OK
+  2            993.6k       7.3k       41            152.4s OK
+  3           1151.9k       8.0k       49            169.3s OK
+  4            579.0k       5.2k       34            111.1s OK
+  5            670.3k       5.0k       36            107.1s OK
+  ———————— —————————— —————————— ———————— ———————— ————————
+  TOTAL       3978.4k      29.5k      178            629.9s
