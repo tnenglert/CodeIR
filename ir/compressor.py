@@ -27,6 +27,11 @@ def kind_to_opcode(kind: str) -> str:
         "method": "MT",
         "async_method": "AMT",
         "class": "CLS",
+        "struct": "ST",
+        "enum": "EN",
+        "trait": "TR",
+        "constant": "CON",
+        "static": "STC",
     }.get(kind, "ENT")
 
 

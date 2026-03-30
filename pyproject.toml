@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codeir_tools"
 version = "0.2.0"
-description = "Deterministic code compression and indexing for Python repositories"
+description = "Deterministic code compression and indexing for code repositories"
 readme = "docs/Rationale.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
@@ -25,6 +25,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+rust = [
+    "tree-sitter>=0.22",
+    "tree-sitter-language-pack>=0.7",
+]
 eval = [
     "anthropic",
     "openai",
@@ -41,7 +45,7 @@ test = [
 codeir = "cli:main"
 
 [tool.setuptools]
-packages = ["ir", "index", "index.store", "tools"]
+packages = ["ir", "index", "index.store", "lang", "tools"]
 py-modules = ["cli"]
 
 [tool.setuptools.package-data]

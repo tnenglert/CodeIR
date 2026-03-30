@@ -250,8 +250,14 @@ def resolve_calls_for_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]]:
+def build_callers_table(repo_path: Path, db_path: Path, language_frontend=None) -> Tuple[int, List[Dict]]:
     """Run caller resolution and populate the callers table.
+
+    Args:
+        repo_path: Repository root path.
+        db_path: Path to entities.db.
+        language_frontend: Optional LanguageFrontend for building import maps.
+            If None, falls back to Python AST-based import map building.
 
     Returns:
         (relationship_count, ambiguous_calls) where ambiguous_calls contains
@@ -290,11 +296,14 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if not abs_path.exists():
             continue
 
-        tree = parse_ast(abs_path)
-        if tree is None:
-            continue
-
-        import_map = build_import_map(tree, abs_path, repo_path)
+        # Build import map via language frontend or Python fallback
+        import_map: Dict[str, str] = {}
+        if language_frontend is not None:
+            import_map = language_frontend.build_import_map(abs_path, repo_path)
+        else:
+            tree = parse_ast(abs_path)
+            if tree is not None:
+                import_map = build_import_map(tree, abs_path, repo_path)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])

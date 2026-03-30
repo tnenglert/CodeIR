@@ -214,14 +214,46 @@ def smart_truncate_entities(
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
+    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir", "target"],
     "extensions": [".py"],
     "compression_level": "Behavior+Index",
 }
 
+# Language-specific extension and hidden-dir defaults
+_LANGUAGE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "python": {
+        "extensions": [".py"],
+        "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
+    },
+    "rust": {
+        "extensions": [".rs"],
+        "hidden_dirs": [".git", "target", ".codeir"],
+    },
+}
+
+
+def detect_repo_language(repo_path: Path) -> str:
+    """Auto-detect the primary language of a repository."""
+    # Quick heuristic: check for language-specific markers
+    if (repo_path / "Cargo.toml").exists():
+        return "rust"
+    if (repo_path / "pyproject.toml").exists() or (repo_path / "setup.py").exists():
+        return "python"
+
+    # Count files by extension (shallow scan)
+    py_count = sum(1 for _ in repo_path.rglob("*.py"))
+    rs_count = sum(1 for _ in repo_path.rglob("*.rs"))
+    if rs_count > py_count:
+        return "rust"
+    return "python"
+
 
 def load_config(repo_path: Path) -> Dict[str, Any]:
-    """Load optional config from <repo>/.codeir/config.json."""
+    """Load optional config from <repo>/.codeir/config.json.
+
+    If no config exists, auto-detects the repo language and applies
+    language-appropriate defaults.
+    """
     cfg = dict(DEFAULT_CONFIG)
     cfg_path = repo_path / ".codeir" / "config.json"
     if cfg_path.exists():
@@ -229,6 +261,12 @@ def load_config(repo_path: Path) -> Dict[str, Any]:
             user_cfg = json.load(fh)
         if isinstance(user_cfg, dict):
             cfg.update(user_cfg)
+        return cfg
+
+    # Auto-detect language and apply defaults
+    lang = detect_repo_language(repo_path)
+    lang_defaults = _LANGUAGE_DEFAULTS.get(lang, _LANGUAGE_DEFAULTS["python"])
+    cfg.update(lang_defaults)
     return cfg
 
 
@@ -1737,7 +1775,8 @@ def cmd_stats(args: argparse.Namespace) -> None:
         print(f"  {kind_info['kind']:20s}  {kind_info['count']}")
 
     fc = stats["file_coverage"]
-    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['python_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+    files_indexed = fc.get('files_indexed', fc.get('python_files_indexed', 0))
+    print(f"\nFile coverage: {fc['files_with_entities']}/{files_indexed} ({fc['coverage_percent']:.1f}%)")
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]

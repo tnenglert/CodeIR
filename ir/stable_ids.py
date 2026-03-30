@@ -28,13 +28,18 @@ def compact_stem(value: str) -> str:
 
 
 def type_prefix_for_kind(kind: str) -> str:
-    """Map entity kind to type prefix (FN, AFN, MT, AMT, CLS, MD)."""
+    """Map entity kind to type prefix (FN, AFN, MT, AMT, CLS, ST, EN, TR, CON, STC, MD)."""
     return {
         "function": "FN",
         "async_function": "AFN",
         "method": "MT",
         "async_method": "AMT",
         "class": "CLS",
+        "struct": "ST",
+        "enum": "EN",
+        "trait": "TR",
+        "constant": "CON",
+        "static": "STC",
         "module": "MD",
     }.get(kind, "ENT")
 
@@ -74,14 +79,15 @@ def make_module_base_id(file_path: str) -> str:
 
     Format: STEM only (e.g., SESS for sessions.py, MNGR for manager.py).
     Type prefix MD is NOT included - it's already on the row as the type field.
-    Uses parent directory name for __init__.py to avoid collisions.
+    Uses parent directory name for __init__.py and mod.rs to avoid collisions.
     """
     parts = file_path.replace("\\", "/").rsplit("/", 1)
     filename = parts[-1] if len(parts) > 1 else parts[0]
     stem = filename.rsplit(".", 1)[0]
-    if stem == "__init__":
+    if stem in ("__init__", "mod"):
         # authentication/__init__.py -> ATHN instead of INIT
-        parent = parts[0] if len(parts) > 1 else "__init__"
+        # handlers/mod.rs -> HNDLRS instead of MOD
+        parent = parts[0] if len(parts) > 1 else stem
         stem = parent.rsplit("/", 1)[-1] if "/" in parent else parent
     return compact_stem(stem)
 
