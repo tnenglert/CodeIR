@@ -1,6 +1,13 @@
 """Tests for IR compression and format conformance."""
 
+import sys
 import pytest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from ir.compressor import _build_behavior, _build_index, kind_to_opcode
 
 
@@ -14,6 +21,11 @@ class TestKindToOpcode:
         assert kind_to_opcode("method") == "MT"
         assert kind_to_opcode("async_method") == "AMT"
         assert kind_to_opcode("class") == "CLS"
+        assert kind_to_opcode("interface") == "IFC"
+        assert kind_to_opcode("type_alias") == "TYP"
+        assert kind_to_opcode("enum") == "ENM"
+        assert kind_to_opcode("namespace") == "NS"
+        assert kind_to_opcode("constant") == "CST"
 
     def test_unknown_kind(self):
         """Unknown kinds map to ENT."""

@@ -43,7 +43,12 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
         "SELECT kind, COUNT(*) AS c FROM entities GROUP BY kind ORDER BY c DESC, kind ASC"
     ).fetchall()
     files_with_entities = int(entities_conn.execute("SELECT COUNT(DISTINCT file_path) FROM entities").fetchone()[0])
-    python_files_indexed = _meta_int(entities_conn, "python_files_indexed", default=0)
+    source_files_indexed = _meta_int(
+        entities_conn,
+        "source_files_indexed",
+        default=_meta_int(entities_conn, "python_files_indexed", default=0),
+    )
+    source_language = _meta_str(entities_conn, "source_language", default="python")
     compression_level = _meta_str(entities_conn, "compression_level", default="Behavior")
 
     # Per-level stats
@@ -126,14 +131,15 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
     mapping_conn.close()
 
     by_kind: List[Dict[str, Any]] = [{"kind": row[0], "count": int(row[1])} for row in by_kind_rows]
-    coverage_pct = (files_with_entities / python_files_indexed * 100.0) if python_files_indexed else 0.0
+    coverage_pct = (files_with_entities / source_files_indexed * 100.0) if source_files_indexed else 0.0
 
     return {
         "entity_count": total_entities,
         "entities_by_kind": by_kind,
+        "source_language": source_language,
         "file_coverage": {
             "files_with_entities": files_with_entities,
-            "python_files_indexed": python_files_indexed,
+            "source_files_indexed": source_files_indexed,
             "coverage_percent": coverage_pct,
         },
         "compression_level": compression_level,

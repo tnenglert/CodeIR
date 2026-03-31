@@ -1,8 +1,14 @@
 """Tests for entity extraction via the locator module."""
 
+import sys
 import tempfile
 import pytest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from index.locator import parse_entities_from_file
 
 

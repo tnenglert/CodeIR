@@ -11,35 +11,17 @@ Resolution tiers:
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from index.languages import get_frontend_for_file
 from index.locator import parse_ast
 from index.store.db import connect
 
 # Max fuzzy matches before we consider the name too ambiguous
 FUZZY_MATCH_LIMIT = 4
-
-# Names too common to produce useful caller relationships
-CALL_STOPLIST = {
-    # Python builtins
-    "len", "range", "print", "str", "int", "float", "bool", "list", "dict",
-    "set", "tuple", "type", "isinstance", "issubclass", "hasattr", "getattr",
-    "setattr", "super", "property", "staticmethod", "classmethod", "enumerate",
-    "zip", "map", "filter", "sorted", "reversed", "any", "all", "min", "max",
-    "abs", "sum", "round", "id", "hash", "repr", "next", "iter", "callable",
-    "vars", "dir", "hex", "oct", "bin", "ord", "chr",
-    # Common method names that resolve to too many targets
-    "get", "set", "put", "post", "delete", "update", "pop", "add", "remove",
-    "append", "extend", "insert", "clear", "copy", "keys", "values", "items",
-    "format", "join", "split", "strip", "replace", "find", "index", "count",
-    "read", "write", "close", "open", "flush", "seek",
-    "encode", "decode", "lower", "upper", "startswith", "endswith",
-    "run", "start", "stop", "init", "setup", "teardown",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -74,60 +56,6 @@ def build_name_maps(
 # Step 2: Build per-file import maps
 # ---------------------------------------------------------------------------
 
-def build_import_map(
-    tree: ast.Module, file_path: Path, repo_path: Path,
-) -> Dict[str, str]:
-    """Map locally bound names to their fully qualified origin.
-
-    Examples:
-        from flask.sessions import SessionInterface
-            → {"SessionInterface": "flask.sessions.SessionInterface"}
-        from flask.sessions import SessionInterface as SI
-            → {"SI": "flask.sessions.SessionInterface"}
-        import os.path
-            → {"os": "os"}
-        from . import helpers  (in src/flask/__init__.py)
-            → {"helpers": "flask.helpers"}
-    """
-    import_map: Dict[str, str] = {}
-
-    for node in ast.iter_child_nodes(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name.split(".")[0]
-                import_map[local_name] = alias.name
-
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-
-            # Handle relative imports
-            if node.level and node.level > 0:
-                try:
-                    rel_path = file_path.relative_to(repo_path)
-                except ValueError:
-                    rel_path = file_path
-                parts = list(rel_path.parent.parts)
-                if node.level <= len(parts):
-                    base = ".".join(parts[: len(parts) - node.level + 1])
-                else:
-                    base = ""
-                if module:
-                    module = f"{base}.{module}" if base else module
-                else:
-                    module = base
-
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name
-                qualified = f"{module}.{alias.name}" if module else alias.name
-                import_map[local_name] = qualified
-
-    return import_map
-
-
-# ---------------------------------------------------------------------------
-# Step 3: Resolve calls for a single entity
-# ---------------------------------------------------------------------------
-
 def resolve_calls_for_entity(
     entity: Dict,
     calls: List[str],
@@ -135,6 +63,7 @@ def resolve_calls_for_entity(
     import_map: Dict[str, str],
     name_to_entities: Dict[str, List[Dict]],
     qualified_to_entity: Dict[str, Dict],
+    stoplist: set[str],
 ) -> Tuple[List[Dict], List[Dict]]:
     """Resolve an entity's calls to caller relationships.
 
@@ -154,7 +83,7 @@ def resolve_calls_for_entity(
         # Qualified calls (contain a dot) bypass stoplist
         is_qualified = "." in call_name
 
-        if not is_qualified and call_name in CALL_STOPLIST:
+        if not is_qualified and call_name in stoplist:
             continue
 
         resolved: List[Tuple[str, str]] = []
@@ -194,12 +123,13 @@ def resolve_calls_for_entity(
                     target = qualified_to_entity[qualified_source]
                     resolved.append((target["entity_id"], "import"))
                 else:
-                    # Try matching the bare name from the qualified import
-                    # e.g. "flask.redirect" → look for entity named "redirect"
                     bare = qualified_source.rsplit(".", 1)[-1]
-                    if bare in qualified_to_entity:
-                        target = qualified_to_entity[bare]
-                        resolved.append((target["entity_id"], "import"))
+                    candidates = [
+                        e for e in name_to_entities.get(bare, [])
+                        if e["entity_id"] != entity["entity_id"]
+                    ]
+                    if len(candidates) == 1:
+                        resolved.append((candidates[0]["entity_id"], "import"))
 
             # Tier 2: Same-file resolution (only if Tier 1 didn't resolve)
             if not resolved:
@@ -294,7 +224,8 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if tree is None:
             continue
 
-        import_map = build_import_map(tree, abs_path, repo_path)
+        frontend = get_frontend_for_file(abs_path)
+        import_map = frontend.build_import_map(tree, abs_path, repo_path)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])
@@ -306,6 +237,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
                 import_map=import_map,
                 name_to_entities=name_to_entities,
                 qualified_to_entity=qualified_to_entity,
+                stoplist=frontend.stoplist,
             )
 
             for rel in relationships:
