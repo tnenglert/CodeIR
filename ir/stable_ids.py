@@ -35,6 +35,11 @@ def type_prefix_for_kind(kind: str) -> str:
         "method": "MT",
         "async_method": "AMT",
         "class": "CLS",
+        "interface": "IFC",
+        "type_alias": "TYP",
+        "enum": "ENM",
+        "namespace": "NS",
+        "constant": "CST",
         "module": "MD",
     }.get(kind, "ENT")
 

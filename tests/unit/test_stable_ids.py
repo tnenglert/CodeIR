@@ -1,6 +1,13 @@
 """Tests for stable ID generation."""
 
+import sys
 import pytest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from ir.stable_ids import compact_stem, make_entity_base_id, make_stable_id, parse_stable_id
 
 
@@ -63,6 +70,11 @@ class TestStableIdParsing:
         assert make_stable_id("async_method", "RDTKN.03") == "AMT.RDTKN.03"
         assert make_stable_id("function", "AUTH") == "FN.AUTH"
         assert make_stable_id("class", "USER") == "CLS.USER"
+        assert make_stable_id("interface", "USERPRFL") == "IFC.USERPRFL"
+        assert make_stable_id("type_alias", "USERID") == "TYP.USERID"
+        assert make_stable_id("enum", "ROLE") == "ENM.ROLE"
+        assert make_stable_id("namespace", "AUDTLBLS") == "NS.AUDTLBLS"
+        assert make_stable_id("constant", "DFLTRLE") == "CST.DFLTRLE"
 
     def test_parse_stable_id(self):
         """Parses stable ID back into components."""

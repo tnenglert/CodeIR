@@ -215,7 +215,6 @@ def smart_truncate_entities(
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
-    "extensions": [".py"],
     "compression_level": "Behavior+Index",
 }
 
@@ -579,12 +578,14 @@ def cmd_index(args: argparse.Namespace) -> None:
     result = index_repo(repo_path, cfg)
 
     if result.get("status") == "no_changes":
-        print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+        language = result.get("language", "python")
+        print(f"No changes detected. {result.get('files_scanned', 0)} {language} files scanned.")
         _ensure_agent_rules(repo_path)
         return
 
     print(f"Indexed {result.get('files_changed', 0)} changed files "
           f"({result.get('files_unchanged', 0)} unchanged, {result.get('files_scanned', 0)} total)")
+    print(f"  Language: {result.get('language', 'python')}")
     print(f"  Entities indexed: {result.get('entities_indexed', 0)} (total: {result.get('total_entities', 0)})")
     print(f"  IR rows: {result.get('ir_rows', 0)} (total: {result.get('total_ir_rows', 0)})")
     print(f"  Abbreviations: {result.get('abbreviations', 0)}")
@@ -1733,11 +1734,12 @@ def cmd_stats(args: argparse.Namespace) -> None:
     stats = get_stats(repo_path)
 
     print(f"Entities:  {stats['entity_count']}")
+    print(f"Language:  {stats.get('source_language', 'python')}")
     for kind_info in stats["entities_by_kind"]:
         print(f"  {kind_info['kind']:20s}  {kind_info['count']}")
 
     fc = stats["file_coverage"]
-    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['python_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['source_files_indexed']} ({fc['coverage_percent']:.1f}%)")
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]
