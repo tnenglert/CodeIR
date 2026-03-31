@@ -41,7 +41,7 @@ test = [
 codeir = "cli:main"
 
 [tool.setuptools]
-packages = ["ir", "index", "index.store", "tools"]
+packages = ["ir", "index", "index.languages", "index.store", "tools"]
 py-modules = ["cli"]
 
 [tool.setuptools.package-data]
