@@ -9,7 +9,6 @@ Pipeline:
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -17,24 +16,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ir.abbreviations import build_abbreviation_maps
-from ir.classifier import classify_file, classify_domain
 from ir.compressor import build_ir_rows
 from ir.stable_ids import make_entity_base_id
 from ir.token_count import count_tokens
 from index.locator import (
     compute_file_content_hash,
-    discover_package_roots,
     discover_source_files,
     extract_code_slice,
-    extract_import_names,
-    parse_ast,
-    parse_bare_entities_from_file,
-    parse_entities_from_file,
-    split_imports,
 )
 from index.callers import build_callers_table
 from index.mapping import load_abbreviation_maps, save_abbreviation_maps
 from index.store.db import connect, ensure_store
+
+# Import language support — each import auto-registers the language
+from languages import LanguageSupport, get_language_for_repo, detect_language
+import languages.python_lang  # noqa: F401 — registers Python support
+try:
+    import languages.rust_lang  # noqa: F401 — registers Rust support
+except ImportError:
+    pass  # tree-sitter-rust not installed
 
 
 # ---------------------------------------------------------------------------
@@ -315,12 +315,17 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     compact_mode = bool(config.get("compact_mode", False))
     passthrough_threshold = int(config.get("passthrough_threshold", 12))
 
+    # Resolve language support
+    lang = get_language_for_repo(repo_path)
+    lang_name = lang.name
+    extensions = config.get("extensions") or lang.extensions
+
     # -----------------------------------------------------------------------
     # Pass 0: Discovery + incremental change detection
     # -----------------------------------------------------------------------
     all_files = discover_source_files(
         repo_path=repo_path,
-        extensions=config.get("extensions", [".py"]),
+        extensions=extensions,
         hidden_dirs=config.get("hidden_dirs", []),
     )
 
@@ -363,6 +368,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
                 "files_changed": 0,
                 "files_unchanged": len(unchanged_files),
                 "compression_level": compression_level,
+                "language": lang_name,
             }
 
         # -------------------------------------------------------------------
@@ -374,7 +380,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         file_sizes: Dict[str, int] = {}
         bare_entities: List[dict] = []
         changed_rel_paths: List[str] = []
-        package_roots = discover_package_roots(repo_path)
+        package_roots = lang.discover_package_roots(repo_path)
         file_deps: Dict[str, str] = {}
 
         for file_path in changed_files:
@@ -385,9 +391,9 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             file_sizes[rel_path] = file_path.stat().st_size
 
             try:
-                tree = parse_ast(file_path)
-            except (ValueError, SyntaxError) as e:
-                print(f"Skipping {file_path}: {e}")
+                tree = lang.parse_ast(file_path)
+            except (ValueError, SyntaxError, Exception) as e:
+                print("Skipping %s: %s" % (file_path, e))
                 continue
             if tree is None:
                 file_classifications[rel_path] = "core_logic"
@@ -395,17 +401,16 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
                 continue
 
             # Use relative path for classification to avoid matching parent directories
-            # (e.g., repo stored in /project/tests/repos/ shouldn't classify all files as "tests")
-            category = classify_file(Path(rel_path), tree)
-            domain = classify_domain(Path(rel_path), tree)
+            category = lang.classify_file(Path(rel_path), tree)
+            domain = lang.classify_domain(Path(rel_path), tree)
             file_classifications[rel_path] = category
             file_domains[rel_path] = domain
 
-            all_imports = extract_import_names(tree, file_path)
-            internal_deps, _ = split_imports(all_imports, package_roots)
+            all_imports = lang.extract_import_names(tree, file_path)
+            internal_deps, _ = lang.split_imports(all_imports, package_roots)
             file_deps[rel_path] = ",".join(internal_deps)
 
-            bare = parse_bare_entities_from_file(file_path)
+            bare = lang.parse_entities(file_path, include_semantic=False)
             for entity in bare:
                 entity["file_path"] = rel_path
             bare_entities.extend(bare)
@@ -438,7 +443,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         full_entities: List[dict] = []
         for file_path in changed_files:
             rel_path = file_path.resolve().relative_to(resolved_repo).as_posix()
-            parsed = parse_entities_from_file(file_path)
+            parsed = lang.parse_entities(file_path, include_semantic=True)
             for entity in parsed:
                 entity["file_path"] = rel_path
             full_entities.extend(parsed)
@@ -509,10 +514,12 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         total_entities = entities_conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         total_ir_rows = entities_conn.execute("SELECT COUNT(*) FROM ir_rows").fetchone()[0]
 
-        _upsert_index_meta(entities_conn, "python_files_indexed", str(len(all_files)))
+        files_indexed_key = "%s_files_indexed" % lang_name
+        _upsert_index_meta(entities_conn, files_indexed_key, str(len(all_files)))
         _upsert_index_meta(entities_conn, "entities", str(total_entities))
         _upsert_index_meta(entities_conn, "ir_rows", str(total_ir_rows))
         _upsert_index_meta(entities_conn, "compression_level", compression_level)
+        _upsert_index_meta(entities_conn, "language", lang_name)
 
     finally:
         entities_conn.close()
@@ -520,7 +527,9 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             mapping_conn.close()
 
     # Pass 4: Build reverse caller relationships (opens its own connection)
-    caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"])
+    caller_count, ambiguous_calls = build_callers_table(
+        repo_path, store_paths["entities_db"], lang=lang,
+    )
 
     # Save abbreviation maps (reopen mapping_conn since we closed it above)
     mapping_conn = connect(store_paths["mapping_db"])
@@ -542,4 +551,5 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         "compression_level": compression_level,
         "caller_relationships": caller_count,
         "ambiguous_calls": ambiguous_calls,
+        "language": lang_name,
     }

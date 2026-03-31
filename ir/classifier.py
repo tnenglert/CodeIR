@@ -432,6 +432,9 @@ def to_module_ir_line(
         "jwt.py", "base.py", "models.py", "utils.py", "helpers.py",
         "db.py", "app.py", "main.py", "users.py", "schemas.py",
         "__init__.py", "strategy.py", "config.py", "settings.py",
+        # Rust common filenames
+        "mod.rs", "lib.rs", "main.rs", "error.rs", "errors.rs",
+        "config.rs", "utils.rs", "types.rs", "models.rs",
     }
     if filename.lower() in common_names and len(parts) > 1:
         # Include up to 2 parent directories for context

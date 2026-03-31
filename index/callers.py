@@ -15,10 +15,13 @@ import ast
 import json
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from index.locator import parse_ast
 from index.store.db import connect
+
+if TYPE_CHECKING:
+    from languages import LanguageSupport
 
 # Max fuzzy matches before we consider the name too ambiguous
 FUZZY_MATCH_LIMIT = 4
@@ -250,8 +253,17 @@ def resolve_calls_for_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]]:
+def build_callers_table(
+    repo_path: Path,
+    db_path: Path,
+    lang: Optional["LanguageSupport"] = None,
+) -> Tuple[int, List[Dict]]:
     """Run caller resolution and populate the callers table.
+
+    Args:
+        repo_path: Repository root directory.
+        db_path: Path to entities.db.
+        lang: Language support instance. If None, uses Python (backwards compat).
 
     Returns:
         (relationship_count, ambiguous_calls) where ambiguous_calls contains
@@ -290,11 +302,18 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if not abs_path.exists():
             continue
 
-        tree = parse_ast(abs_path)
-        if tree is None:
-            continue
-
-        import_map = build_import_map(tree, abs_path, repo_path)
+        # Use language-specific parsing and import map building
+        if lang is not None:
+            tree = lang.parse_ast(abs_path)
+            if tree is None:
+                continue
+            import_map = lang.build_import_map(tree, abs_path, repo_path)
+        else:
+            # Backwards compat: use Python-specific functions
+            tree = parse_ast(abs_path)
+            if tree is None:
+                continue
+            import_map = build_import_map(tree, abs_path, repo_path)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])
