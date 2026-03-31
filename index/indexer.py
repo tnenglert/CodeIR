@@ -9,7 +9,6 @@ Pipeline:
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -17,20 +16,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ir.abbreviations import build_abbreviation_maps
-from ir.classifier import classify_file, classify_domain
 from ir.compressor import build_ir_rows
 from ir.stable_ids import make_entity_base_id
 from ir.token_count import count_tokens
+from index.languages import detect_frontend, effective_extensions
 from index.locator import (
     compute_file_content_hash,
-    discover_package_roots,
     discover_source_files,
     extract_code_slice,
-    extract_import_names,
-    parse_ast,
-    parse_bare_entities_from_file,
-    parse_entities_from_file,
-    split_imports,
 )
 from index.callers import build_callers_table
 from index.mapping import load_abbreviation_maps, save_abbreviation_maps
@@ -314,13 +307,15 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     compression_level = resolve_compression_level(config)
     compact_mode = bool(config.get("compact_mode", False))
     passthrough_threshold = int(config.get("passthrough_threshold", 12))
+    frontend = detect_frontend(repo_path, config)
+    source_extensions = effective_extensions(frontend, config.get("extensions"))
 
     # -----------------------------------------------------------------------
     # Pass 0: Discovery + incremental change detection
     # -----------------------------------------------------------------------
     all_files = discover_source_files(
         repo_path=repo_path,
-        extensions=config.get("extensions", [".py"]),
+        extensions=source_extensions,
         hidden_dirs=config.get("hidden_dirs", []),
     )
 
@@ -374,8 +369,12 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         file_sizes: Dict[str, int] = {}
         bare_entities: List[dict] = []
         changed_rel_paths: List[str] = []
-        package_roots = discover_package_roots(repo_path)
         file_deps: Dict[str, str] = {}
+        parsed_by_rel_path: Dict[str, Optional[object]] = {}
+        all_rel_paths: set[str] = {
+            f.resolve().relative_to(resolved_repo).as_posix()
+            for f in all_files
+        }
 
         for file_path in changed_files:
             rel_path = file_path.resolve().relative_to(resolved_repo).as_posix()
@@ -384,28 +383,25 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             file_hashes[rel_path] = content_hash
             file_sizes[rel_path] = file_path.stat().st_size
 
-            try:
-                tree = parse_ast(file_path)
-            except (ValueError, SyntaxError) as e:
-                print(f"Skipping {file_path}: {e}")
-                continue
-            if tree is None:
-                file_classifications[rel_path] = "core_logic"
-                file_domains[rel_path] = "unknown"
-                continue
+            parsed = frontend.parse_file(file_path)
+            parsed_by_rel_path[rel_path] = parsed
 
             # Use relative path for classification to avoid matching parent directories
             # (e.g., repo stored in /project/tests/repos/ shouldn't classify all files as "tests")
-            category = classify_file(Path(rel_path), tree)
-            domain = classify_domain(Path(rel_path), tree)
+            category = frontend.classify_file(Path(rel_path), parsed)
+            domain = frontend.classify_domain(Path(rel_path), parsed)
             file_classifications[rel_path] = category
             file_domains[rel_path] = domain
 
-            all_imports = extract_import_names(tree, file_path)
-            internal_deps, _ = split_imports(all_imports, package_roots)
-            file_deps[rel_path] = ",".join(internal_deps)
+            if parsed is not None:
+                internal_deps = frontend.extract_internal_dependencies(
+                    parsed=parsed,
+                    repo_path=repo_path,
+                    all_source_paths=all_rel_paths,
+                )
+                file_deps[rel_path] = ",".join(internal_deps)
 
-            bare = parse_bare_entities_from_file(file_path)
+            bare = frontend.parse_bare_entities(parsed) if parsed is not None else []
             for entity in bare:
                 entity["file_path"] = rel_path
             bare_entities.extend(bare)
@@ -438,10 +434,11 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         full_entities: List[dict] = []
         for file_path in changed_files:
             rel_path = file_path.resolve().relative_to(resolved_repo).as_posix()
-            parsed = parse_entities_from_file(file_path)
-            for entity in parsed:
+            parsed_file = parsed_by_rel_path.get(rel_path)
+            parsed_entities = frontend.parse_entities(parsed_file) if parsed_file is not None else []
+            for entity in parsed_entities:
                 entity["file_path"] = rel_path
-            full_entities.extend(parsed)
+            full_entities.extend(parsed_entities)
 
         _assign_entity_ids(full_entities, existing_ids_by_base=existing_ids_by_base)
 
@@ -509,7 +506,9 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         total_entities = entities_conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         total_ir_rows = entities_conn.execute("SELECT COUNT(*) FROM ir_rows").fetchone()[0]
 
-        _upsert_index_meta(entities_conn, "python_files_indexed", str(len(all_files)))
+        _upsert_index_meta(entities_conn, "source_files_indexed", str(len(all_files)))
+        _upsert_index_meta(entities_conn, "python_files_indexed", str(len(all_files) if frontend.language == "python" else 0))
+        _upsert_index_meta(entities_conn, "language", frontend.language)
         _upsert_index_meta(entities_conn, "entities", str(total_entities))
         _upsert_index_meta(entities_conn, "ir_rows", str(total_ir_rows))
         _upsert_index_meta(entities_conn, "compression_level", compression_level)
@@ -520,7 +519,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             mapping_conn.close()
 
     # Pass 4: Build reverse caller relationships (opens its own connection)
-    caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"])
+    caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"], frontend)
 
     # Save abbreviation maps (reopen mapping_conn since we closed it above)
     mapping_conn = connect(store_paths["mapping_db"])
@@ -542,4 +541,5 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         "compression_level": compression_level,
         "caller_relationships": caller_count,
         "ambiguous_calls": ambiguous_calls,
+        "language": frontend.language,
     }

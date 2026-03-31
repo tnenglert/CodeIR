@@ -1,23 +1,13 @@
-"""Reverse caller resolution — builds a callers table mapping entity→callers.
-
-Pass 2 of the indexing pipeline. Runs after entity extraction and ID assignment.
-Resolves semantic.calls references to entity IDs and stores inverse relationships.
-
-Resolution tiers:
-  import — resolved through file imports (high confidence)
-  local  — resolved to entity in same file (high confidence)
-  fuzzy  — matched by bare name against repo-wide entities (lower confidence)
-"""
+"""Reverse caller resolution — builds a callers table mapping entity→callers."""
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from index.locator import parse_ast
+from index.languages.base import LanguageFrontend
 from index.store.db import connect
 
 # Max fuzzy matches before we consider the name too ambiguous
@@ -68,60 +58,6 @@ def build_name_maps(
         qualified_to_entity[row[2]] = entity
 
     return name_to_entities, qualified_to_entity
-
-
-# ---------------------------------------------------------------------------
-# Step 2: Build per-file import maps
-# ---------------------------------------------------------------------------
-
-def build_import_map(
-    tree: ast.Module, file_path: Path, repo_path: Path,
-) -> Dict[str, str]:
-    """Map locally bound names to their fully qualified origin.
-
-    Examples:
-        from flask.sessions import SessionInterface
-            → {"SessionInterface": "flask.sessions.SessionInterface"}
-        from flask.sessions import SessionInterface as SI
-            → {"SI": "flask.sessions.SessionInterface"}
-        import os.path
-            → {"os": "os"}
-        from . import helpers  (in src/flask/__init__.py)
-            → {"helpers": "flask.helpers"}
-    """
-    import_map: Dict[str, str] = {}
-
-    for node in ast.iter_child_nodes(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name.split(".")[0]
-                import_map[local_name] = alias.name
-
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-
-            # Handle relative imports
-            if node.level and node.level > 0:
-                try:
-                    rel_path = file_path.relative_to(repo_path)
-                except ValueError:
-                    rel_path = file_path
-                parts = list(rel_path.parent.parts)
-                if node.level <= len(parts):
-                    base = ".".join(parts[: len(parts) - node.level + 1])
-                else:
-                    base = ""
-                if module:
-                    module = f"{base}.{module}" if base else module
-                else:
-                    module = base
-
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name
-                qualified = f"{module}.{alias.name}" if module else alias.name
-                import_map[local_name] = qualified
-
-    return import_map
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +186,7 @@ def resolve_calls_for_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]]:
+def build_callers_table(repo_path: Path, db_path: Path, frontend: LanguageFrontend) -> Tuple[int, List[Dict]]:
     """Run caller resolution and populate the callers table.
 
     Returns:
@@ -290,11 +226,11 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if not abs_path.exists():
             continue
 
-        tree = parse_ast(abs_path)
-        if tree is None:
+        parsed = frontend.parse_file(abs_path)
+        if parsed is None:
             continue
 
-        import_map = build_import_map(tree, abs_path, repo_path)
+        import_map = frontend.build_import_map(parsed, repo_path, entities_by_file)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])

@@ -28,13 +28,18 @@ def compact_stem(value: str) -> str:
 
 
 def type_prefix_for_kind(kind: str) -> str:
-    """Map entity kind to type prefix (FN, AFN, MT, AMT, CLS, MD)."""
+    """Map entity kind to type prefix."""
     return {
         "function": "FN",
         "async_function": "AFN",
         "method": "MT",
         "async_method": "AMT",
         "class": "CLS",
+        "interface": "IFC",
+        "type_alias": "TYP",
+        "enum": "ENM",
+        "namespace": "NS",
+        "constant": "CST",
         "module": "MD",
     }.get(kind, "ENT")
 
