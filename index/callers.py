@@ -17,7 +17,6 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from index.locator import parse_ast
 from index.store.db import connect
 
 # Max fuzzy matches before we consider the name too ambiguous
@@ -135,6 +134,7 @@ def resolve_calls_for_entity(
     import_map: Dict[str, str],
     name_to_entities: Dict[str, List[Dict]],
     qualified_to_entity: Dict[str, Dict],
+    call_stoplist: Optional[set] = None,
 ) -> Tuple[List[Dict], List[Dict]]:
     """Resolve an entity's calls to caller relationships.
 
@@ -146,6 +146,7 @@ def resolve_calls_for_entity(
     Qualified calls (e.g., "password_helper.hash") bypass the stoplist
     and resolve by matching the method suffix against entity names.
     """
+    stoplist = call_stoplist if call_stoplist is not None else CALL_STOPLIST
     relationships: List[Dict] = []
     ambiguous: List[Dict] = []
     seen_targets: set = set()
@@ -154,7 +155,7 @@ def resolve_calls_for_entity(
         # Qualified calls (contain a dot) bypass stoplist
         is_qualified = "." in call_name
 
-        if not is_qualified and call_name in CALL_STOPLIST:
+        if not is_qualified and call_name in stoplist:
             continue
 
         resolved: List[Tuple[str, str]] = []
@@ -250,7 +251,7 @@ def resolve_calls_for_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]]:
+def build_callers_table(repo_path: Path, db_path: Path, language: str = "python") -> Tuple[int, List[Dict]]:
     """Run caller resolution and populate the callers table.
 
     Returns:
@@ -258,6 +259,10 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         unresolved calls that exceeded FUZZY_MATCH_LIMIT.
     """
     from index.store.db import _ensure_callers_table
+    from index.lang import get_backend
+
+    backend = get_backend(language)
+    stoplist = backend.get_call_stoplist()
 
     conn = connect(db_path)
 
@@ -290,11 +295,11 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if not abs_path.exists():
             continue
 
-        tree = parse_ast(abs_path)
+        tree = backend.parse_file(abs_path)
         if tree is None:
             continue
 
-        import_map = build_import_map(tree, abs_path, repo_path)
+        import_map = backend.build_import_map(tree, abs_path, repo_path)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])
@@ -306,6 +311,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
                 import_map=import_map,
                 name_to_entities=name_to_entities,
                 qualified_to_entity=qualified_to_entity,
+                call_stoplist=stoplist,
             )
 
             for rel in relationships:

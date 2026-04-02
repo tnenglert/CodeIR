@@ -28,7 +28,7 @@ def compact_stem(value: str) -> str:
 
 
 def type_prefix_for_kind(kind: str) -> str:
-    """Map entity kind to type prefix (FN, AFN, MT, AMT, CLS, MD)."""
+    """Map entity kind to type prefix (FN, AFN, MT, AMT, CLS, MD, ST, EN, TR, TM, IM, CST)."""
     return {
         "function": "FN",
         "async_function": "AFN",
@@ -36,6 +36,13 @@ def type_prefix_for_kind(kind: str) -> str:
         "async_method": "AMT",
         "class": "CLS",
         "module": "MD",
+        # Rust-specific kinds
+        "struct": "ST",
+        "enum": "EN",
+        "trait": "TR",
+        "trait_method": "TM",
+        "impl_block": "IM",
+        "constant": "CST",
     }.get(kind, "ENT")
 
 
@@ -74,14 +81,15 @@ def make_module_base_id(file_path: str) -> str:
 
     Format: STEM only (e.g., SESS for sessions.py, MNGR for manager.py).
     Type prefix MD is NOT included - it's already on the row as the type field.
-    Uses parent directory name for __init__.py to avoid collisions.
+    Uses parent directory name for __init__.py / mod.rs / lib.rs to avoid collisions.
     """
     parts = file_path.replace("\\", "/").rsplit("/", 1)
     filename = parts[-1] if len(parts) > 1 else parts[0]
     stem = filename.rsplit(".", 1)[0]
-    if stem == "__init__":
-        # authentication/__init__.py -> ATHN instead of INIT
-        parent = parts[0] if len(parts) > 1 else "__init__"
+    # Python: __init__.py uses parent dir name
+    # Rust: mod.rs and lib.rs use parent dir name (same convention)
+    if stem in ("__init__", "mod", "lib"):
+        parent = parts[0] if len(parts) > 1 else stem
         stem = parent.rsplit("/", 1)[-1] if "/" in parent else parent
     return compact_stem(stem)
 

@@ -27,6 +27,13 @@ def kind_to_opcode(kind: str) -> str:
         "method": "MT",
         "async_method": "AMT",
         "class": "CLS",
+        # Rust-specific kinds
+        "struct": "ST",
+        "enum": "EN",
+        "trait": "TR",
+        "trait_method": "TM",
+        "impl_block": "IM",
+        "constant": "CST",
     }.get(kind, "ENT")
 
 
