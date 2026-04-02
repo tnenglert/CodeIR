@@ -214,8 +214,7 @@ def smart_truncate_entities(
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
-    "extensions": [".py"],
+    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir", "target"],
     "compression_level": "Behavior+Index",
 }
 
@@ -1737,7 +1736,10 @@ def cmd_stats(args: argparse.Namespace) -> None:
         print(f"  {kind_info['kind']:20s}  {kind_info['count']}")
 
     fc = stats["file_coverage"]
-    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['python_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+    files_total = fc.get('files_indexed', fc.get('python_files_indexed', 0))
+    lang = stats.get('language', 'python')
+    print(f"\nLanguage: {lang}")
+    print(f"File coverage: {fc['files_with_entities']}/{files_total} ({fc['coverage_percent']:.1f}%)")
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]
