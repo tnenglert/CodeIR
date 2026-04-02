@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
@@ -24,6 +25,19 @@ def _meta_str(conn: sqlite3.Connection, key: str, default: str = "") -> str:
     return row[0] if row else default
 
 
+def _meta_json_list(conn: sqlite3.Connection, key: str) -> List[str]:
+    row = conn.execute("SELECT value FROM index_meta WHERE key = ?", (key,)).fetchone()
+    if not row:
+        return []
+    try:
+        value = json.loads(row[0])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
 def get_stats(repo_path: Path) -> Dict[str, Any]:
     """Compute repository stats from entities.db and mapping.db."""
     entities_db = repo_path / ".codeir" / "entities.db"
@@ -43,7 +57,15 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
         "SELECT kind, COUNT(*) AS c FROM entities GROUP BY kind ORDER BY c DESC, kind ASC"
     ).fetchall()
     files_with_entities = int(entities_conn.execute("SELECT COUNT(DISTINCT file_path) FROM entities").fetchone()[0])
-    python_files_indexed = _meta_int(entities_conn, "python_files_indexed", default=0)
+    source_files_indexed = _meta_int(
+        entities_conn,
+        "source_files_indexed",
+        default=_meta_int(entities_conn, "python_files_indexed", default=0),
+    )
+    source_language = _meta_str(entities_conn, "source_language", default="python")
+    source_languages = _meta_json_list(entities_conn, "source_languages")
+    if not source_languages:
+        source_languages = [source_language]
     compression_level = _meta_str(entities_conn, "compression_level", default="Behavior")
 
     # Per-level stats
@@ -126,14 +148,16 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
     mapping_conn.close()
 
     by_kind: List[Dict[str, Any]] = [{"kind": row[0], "count": int(row[1])} for row in by_kind_rows]
-    coverage_pct = (files_with_entities / python_files_indexed * 100.0) if python_files_indexed else 0.0
+    coverage_pct = (files_with_entities / source_files_indexed * 100.0) if source_files_indexed else 0.0
 
     return {
         "entity_count": total_entities,
         "entities_by_kind": by_kind,
+        "source_language": source_language,
+        "source_languages": source_languages,
         "file_coverage": {
             "files_with_entities": files_with_entities,
-            "python_files_indexed": python_files_indexed,
+            "source_files_indexed": source_files_indexed,
             "coverage_percent": coverage_pct,
         },
         "compression_level": compression_level,

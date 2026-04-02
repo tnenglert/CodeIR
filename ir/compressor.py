@@ -21,13 +21,8 @@ PASSTHROUGH_TOKEN_THRESHOLD_DEFAULT = 12
 
 
 def kind_to_opcode(kind: str) -> str:
-    return {
-        "function": "FN",
-        "async_function": "AFN",
-        "method": "MT",
-        "async_method": "AMT",
-        "class": "CLS",
-    }.get(kind, "ENT")
+    from ir.stable_ids import type_prefix_for_kind
+    return type_prefix_for_kind(kind)
 
 
 # ---------------------------------------------------------------------------

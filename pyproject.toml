@@ -25,6 +25,14 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+rust = [
+    "tree-sitter",
+    "tree-sitter-rust",
+]
+typescript = [
+    "tree-sitter",
+    "tree-sitter-typescript",
+]
 eval = [
     "anthropic",
     "openai",
@@ -35,6 +43,9 @@ eval = [
 ]
 test = [
     "pytest",
+    "tree-sitter",
+    "tree-sitter-rust",
+    "tree-sitter-typescript",
 ]
 
 [project.scripts]

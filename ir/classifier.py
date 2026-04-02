@@ -418,7 +418,10 @@ def to_module_ir_line(
 ) -> str:
     """Emit a compact module IR line.
 
-    Format: MD SESS sessions.py | cat:core_logic | entities:12 | deps:auth,utils | churn:-
+    Format: classifier.py | cat:core_logic | entities:12 | deps:auth,utils | churn:-
+
+    ``module_id`` is accepted for call-site compatibility but not included in
+    the output (models confused compressed stems with entity IDs).
 
     For files with common names (jwt.py, base.py, etc.), includes parent directories
     to disambiguate: auth/strategy/jwt.py vs jwt.py
@@ -441,7 +444,7 @@ def to_module_ir_line(
         display_path = filename
 
     deps = deps_internal if deps_internal else "-"
-    return f"MD {module_id} {display_path} | cat:{category} | entities:{entity_count} | deps:{deps} | churn:{churn}"
+    return f"{display_path} | cat:{category} | entities:{entity_count} | deps:{deps} | churn:{churn}"
 
 
 # ---------------------------------------------------------------------------
@@ -513,24 +516,12 @@ def _collapse_patterns(
             nonzero_count = len(nonzero)
             zero_count = len(zero)
 
-            # Collect module IDs for searchability
-            mids = sorted(
-                module_ids.get(str(m["file_path"]), "")
-                for m in nonzero if module_ids.get(str(m["file_path"]))
-            )
-            mid_range = ""
-            if mids:
-                if len(mids) <= 3:
-                    mid_range = f" [{', '.join(mids)}]"
-                else:
-                    mid_range = f" [{mids[0]}..{mids[-1]}]"
-
             parts = [f"{fname} ×{len(group)}"]
             if total_ents > 0:
                 parts.append(f"{total_ents} entities")
             if zero_count > 0:
                 parts.append(f"{zero_count} empty")
-            summary = " | ".join(parts) + mid_range
+            summary = " | ".join(parts)
             pattern_summaries.append(summary)
         else:
             # Not enough repetitions to collapse — list individually (skip zero)

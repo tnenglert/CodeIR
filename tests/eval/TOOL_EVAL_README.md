@@ -13,7 +13,10 @@ python tests/eval/score_tool_tasks.py responses.json
 
 ## Task Pack Structure
 
-`task_pack_tools_v1.json` contains 10 tasks across 5 types:
+The original `task_pack_tools_v1.json` pack was retired along with the
+`_fastapi-users-master` benchmark fixture it depended on.
+
+When a new tool-eval pack is added, it should provide:
 
 | Type | Tasks | What it tests |
 |------|-------|---------------|
@@ -156,18 +159,10 @@ python compare_results.py scored_*.json
 
 ## Adding Tasks
 
-1. Add task to `task_pack_tools_v1.json`
+1. Add task to your task-pack JSON file
 2. Include ground truth (entities, concepts, files)
 3. Define scoring weights (should sum to 100)
 4. Test with example response
-
-## Fixture
-
-Tasks use `tests/_local/testRepositories/_fastapi-users-master`. Ensure it's indexed:
-
-```bash
-python cli.py index tests/_local/testRepositories/_fastapi-users-master --level Behavior
-```
 
 ## Interpreting Results
 

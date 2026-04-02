@@ -580,6 +580,9 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     if result.get("status") == "no_changes":
         print(f"No changes detected. {result.get('files_scanned', 0)} files scanned.")
+        paths, using_legacy_paths = _resolve_bearings_paths(repo_path)
+        if using_legacy_paths or not paths["summary"].exists():
+            _generate_bearings_files(repo_path)
         _ensure_agent_rules(repo_path)
         return
 
@@ -614,6 +617,8 @@ def cmd_index(args: argparse.Namespace) -> None:
         test_pats = [p for p in patterns if p.is_test_pattern]
         coverage = sum(p.member_count for p in non_test)
         print(f"  Patterns: {len(non_test)} structural ({coverage} entities), {len(test_pats)} test")
+
+    _generate_bearings_files(repo_path)
 
     # Checkpoint WAL into main DB so the store works in sandboxed/immutable
     # environments (e.g. Codex exec) without needing WAL file access.
@@ -1731,13 +1736,19 @@ def cmd_grep(args: argparse.Namespace) -> None:
 def cmd_stats(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
     stats = get_stats(repo_path)
+    source_language = stats.get("source_language", "python")
+    source_languages = stats.get("source_languages", [source_language])
+    language_label = source_language
+    if source_language == "mixed" and source_languages:
+        language_label = f"mixed ({', '.join(source_languages)})"
 
+    print(f"Language:  {language_label}")
     print(f"Entities:  {stats['entity_count']}")
     for kind_info in stats["entities_by_kind"]:
         print(f"  {kind_info['kind']:20s}  {kind_info['count']}")
 
     fc = stats["file_coverage"]
-    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['python_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+    print(f"\nFile coverage: {fc['files_with_entities']}/{fc['source_files_indexed']} ({fc['coverage_percent']:.1f}%)")
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]

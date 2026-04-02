@@ -11,36 +11,16 @@ Resolution tiers:
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
-from index.locator import parse_ast
+from index.languages import get_frontend_for_file
 from index.store.db import connect
 
 # Max fuzzy matches before we consider the name too ambiguous
 FUZZY_MATCH_LIMIT = 4
-
-# Names too common to produce useful caller relationships
-CALL_STOPLIST = {
-    # Python builtins
-    "len", "range", "print", "str", "int", "float", "bool", "list", "dict",
-    "set", "tuple", "type", "isinstance", "issubclass", "hasattr", "getattr",
-    "setattr", "super", "property", "staticmethod", "classmethod", "enumerate",
-    "zip", "map", "filter", "sorted", "reversed", "any", "all", "min", "max",
-    "abs", "sum", "round", "id", "hash", "repr", "next", "iter", "callable",
-    "vars", "dir", "hex", "oct", "bin", "ord", "chr",
-    # Common method names that resolve to too many targets
-    "get", "set", "put", "post", "delete", "update", "pop", "add", "remove",
-    "append", "extend", "insert", "clear", "copy", "keys", "values", "items",
-    "format", "join", "split", "strip", "replace", "find", "index", "count",
-    "read", "write", "close", "open", "flush", "seek",
-    "encode", "decode", "lower", "upper", "startswith", "endswith",
-    "run", "start", "stop", "init", "setup", "teardown",
-}
-
 
 # ---------------------------------------------------------------------------
 # Step 1: Build repo-wide name maps from entities table
@@ -48,7 +28,7 @@ CALL_STOPLIST = {
 
 def build_name_maps(
     conn,
-) -> Tuple[Dict[str, List[Dict]], Dict[str, Dict]]:
+) -> Tuple[Dict[str, List[Dict]], Dict[tuple[str, str], Dict]]:
     """Build name→entities and qualified_name→entity lookup maps."""
     rows = conn.execute(
         "SELECT id, name, qualified_name, file_path FROM entities"
@@ -63,69 +43,47 @@ def build_name_maps(
             "name": row[1],
             "qualified_name": row[2],
             "file_path": row[3],
+            "language": get_frontend_for_file(Path(row[3])).name,
         }
         name_to_entities.setdefault(row[1], []).append(entity)
-        qualified_to_entity[row[2]] = entity
+        qualified_to_entity[(entity["language"], row[2])] = entity
 
     return name_to_entities, qualified_to_entity
 
 
-# ---------------------------------------------------------------------------
-# Step 2: Build per-file import maps
-# ---------------------------------------------------------------------------
+def _matching_entities(
+    call_name: str,
+    *,
+    entity_id: str,
+    language: str,
+    name_to_entities: Dict[str, List[Dict]],
+    file_path: str = None,
+) -> List[Dict]:
+    """Find entities matching a call name, excluding self.
 
-def build_import_map(
-    tree: ast.Module, file_path: Path, repo_path: Path,
-) -> Dict[str, str]:
-    """Map locally bound names to their fully qualified origin.
-
-    Examples:
-        from flask.sessions import SessionInterface
-            → {"SessionInterface": "flask.sessions.SessionInterface"}
-        from flask.sessions import SessionInterface as SI
-            → {"SI": "flask.sessions.SessionInterface"}
-        import os.path
-            → {"os": "os"}
-        from . import helpers  (in src/flask/__init__.py)
-            → {"helpers": "flask.helpers"}
+    If file_path is given, restricts to same-file matches (local resolution).
+    Otherwise returns all repo-wide matches for the language.
     """
-    import_map: Dict[str, str] = {}
+    return [
+        entity
+        for entity in name_to_entities.get(call_name, [])
+        if entity["entity_id"] != entity_id
+        and entity["language"] == language
+        and (file_path is None or entity["file_path"] == file_path)
+    ]
 
-    for node in ast.iter_child_nodes(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name.split(".")[0]
-                import_map[local_name] = alias.name
 
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-
-            # Handle relative imports
-            if node.level and node.level > 0:
-                try:
-                    rel_path = file_path.relative_to(repo_path)
-                except ValueError:
-                    rel_path = file_path
-                parts = list(rel_path.parent.parts)
-                if node.level <= len(parts):
-                    base = ".".join(parts[: len(parts) - node.level + 1])
-                else:
-                    base = ""
-                if module:
-                    module = f"{base}.{module}" if base else module
-                else:
-                    module = base
-
-            for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name
-                qualified = f"{module}.{alias.name}" if module else alias.name
-                import_map[local_name] = qualified
-
-    return import_map
+def _append_resolved(
+    resolved: List[Tuple[str, str]],
+    candidates: List[Dict],
+    resolution: str,
+) -> None:
+    for target in candidates:
+        resolved.append((target["entity_id"], resolution))
 
 
 # ---------------------------------------------------------------------------
-# Step 3: Resolve calls for a single entity
+# Step 2: Resolve calls for a single entity
 # ---------------------------------------------------------------------------
 
 def resolve_calls_for_entity(
@@ -134,7 +92,8 @@ def resolve_calls_for_entity(
     file_path: str,
     import_map: Dict[str, str],
     name_to_entities: Dict[str, List[Dict]],
-    qualified_to_entity: Dict[str, Dict],
+    qualified_to_entity: Dict[tuple[str, str], Dict],
+    stoplist: set[str],
 ) -> Tuple[List[Dict], List[Dict]]:
     """Resolve an entity's calls to caller relationships.
 
@@ -149,80 +108,80 @@ def resolve_calls_for_entity(
     relationships: List[Dict] = []
     ambiguous: List[Dict] = []
     seen_targets: set = set()
+    caller_language = entity["language"]
 
     for call_name in calls:
         # Qualified calls (contain a dot) bypass stoplist
         is_qualified = "." in call_name
 
-        if not is_qualified and call_name in CALL_STOPLIST:
+        if not is_qualified and call_name in stoplist:
             continue
 
         resolved: List[Tuple[str, str]] = []
         candidates_for_ambiguity: List[Dict] = []
 
         if is_qualified:
-            # For qualified calls like "password_helper.hash",
-            # extract the method name and match against entities
             method_name = call_name.rsplit(".", 1)[-1]
+            same_file = _matching_entities(
+                method_name,
+                file_path=file_path,
+                entity_id=entity["entity_id"],
+                language=caller_language,
+                name_to_entities=name_to_entities,
+            )
+            _append_resolved(resolved, same_file, "local")
 
-            # Try same-file resolution first
-            same_file = [
-                e for e in name_to_entities.get(method_name, [])
-                if e["file_path"] == file_path and e["entity_id"] != entity["entity_id"]
-            ]
-            for target in same_file:
-                resolved.append((target["entity_id"], "local"))
-
-            # Then fuzzy repo-wide match
             if not resolved:
-                candidates = [
-                    e for e in name_to_entities.get(method_name, [])
-                    if e["entity_id"] != entity["entity_id"]
-                ]
+                candidates = _matching_entities(
+                    method_name,
+                    entity_id=entity["entity_id"],
+                    language=caller_language,
+                    name_to_entities=name_to_entities,
+                )
                 if 1 <= len(candidates) <= FUZZY_MATCH_LIMIT:
-                    for target in candidates:
-                        resolved.append((target["entity_id"], "fuzzy"))
+                    _append_resolved(resolved, candidates, "fuzzy")
                 elif len(candidates) > FUZZY_MATCH_LIMIT:
                     candidates_for_ambiguity = candidates
         else:
-            # Unqualified call — use original resolution tiers
-
-            # Tier 1: Import resolution
             if call_name in import_map:
                 qualified_source = import_map[call_name]
-                if qualified_source in qualified_to_entity:
-                    target = qualified_to_entity[qualified_source]
+                exact_key = (caller_language, qualified_source)
+                if exact_key in qualified_to_entity:
+                    target = qualified_to_entity[exact_key]
                     resolved.append((target["entity_id"], "import"))
                 else:
-                    # Try matching the bare name from the qualified import
-                    # e.g. "flask.redirect" → look for entity named "redirect"
                     bare = qualified_source.rsplit(".", 1)[-1]
-                    if bare in qualified_to_entity:
-                        target = qualified_to_entity[bare]
-                        resolved.append((target["entity_id"], "import"))
+                    candidates = _matching_entities(
+                        bare,
+                        entity_id=entity["entity_id"],
+                        language=caller_language,
+                        name_to_entities=name_to_entities,
+                    )
+                    if len(candidates) == 1:
+                        resolved.append((candidates[0]["entity_id"], "import"))
 
-            # Tier 2: Same-file resolution (only if Tier 1 didn't resolve)
             if not resolved:
-                same_file = [
-                    e for e in name_to_entities.get(call_name, [])
-                    if e["file_path"] == file_path and e["entity_id"] != entity["entity_id"]
-                ]
-                for target in same_file:
-                    resolved.append((target["entity_id"], "local"))
+                same_file = _matching_entities(
+                    call_name,
+                    file_path=file_path,
+                    entity_id=entity["entity_id"],
+                    language=caller_language,
+                    name_to_entities=name_to_entities,
+                )
+                _append_resolved(resolved, same_file, "local")
 
-            # Tier 3: Fuzzy repo-wide match (only if nothing resolved above)
             if not resolved:
-                candidates = [
-                    e for e in name_to_entities.get(call_name, [])
-                    if e["entity_id"] != entity["entity_id"]
-                ]
+                candidates = _matching_entities(
+                    call_name,
+                    entity_id=entity["entity_id"],
+                    language=caller_language,
+                    name_to_entities=name_to_entities,
+                )
                 if 1 <= len(candidates) <= FUZZY_MATCH_LIMIT:
-                    for target in candidates:
-                        resolved.append((target["entity_id"], "fuzzy"))
+                    _append_resolved(resolved, candidates, "fuzzy")
                 elif len(candidates) > FUZZY_MATCH_LIMIT:
                     candidates_for_ambiguity = candidates
 
-        # Track ambiguous calls (exceeded fuzzy limit, no other resolution)
         if not resolved and candidates_for_ambiguity:
             ambiguous.append({
                 "caller_id": entity["entity_id"],
@@ -243,7 +202,6 @@ def resolve_calls_for_entity(
                 })
 
     return relationships, ambiguous
-
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +248,12 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         if not abs_path.exists():
             continue
 
-        tree = parse_ast(abs_path)
+        frontend = get_frontend_for_file(abs_path)
+        tree = frontend.parse_ast(abs_path)
         if tree is None:
             continue
 
-        import_map = build_import_map(tree, abs_path, repo_path)
+        import_map = frontend.build_import_map(tree, abs_path, repo_path)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])
@@ -306,6 +265,7 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
                 import_map=import_map,
                 name_to_entities=name_to_entities,
                 qualified_to_entity=qualified_to_entity,
+                stoplist=frontend.stoplist,
             )
 
             for rel in relationships:

@@ -9,7 +9,6 @@ Pipeline:
 
 from __future__ import annotations
 
-import ast
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -17,20 +16,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ir.abbreviations import build_abbreviation_maps
-from ir.classifier import classify_file, classify_domain
 from ir.compressor import build_ir_rows
 from ir.stable_ids import make_entity_base_id
 from ir.token_count import count_tokens
+from index.languages import get_frontend_for_file, resolve_frontend_config
 from index.locator import (
     compute_file_content_hash,
-    discover_package_roots,
     discover_source_files,
     extract_code_slice,
-    extract_import_names,
-    parse_ast,
-    parse_bare_entities_from_file,
-    parse_entities_from_file,
-    split_imports,
 )
 from index.callers import build_callers_table
 from index.mapping import load_abbreviation_maps, save_abbreviation_maps
@@ -67,6 +60,11 @@ def resolve_compression_level(config: Dict[str, Any]) -> str:
     if raw_mode:
         return map_legacy_mode_to_level(raw_mode)
     return "Behavior"
+
+
+def _primary_language(source_languages: List[str]) -> str:
+    """Return the single language name, or 'mixed' if multiple."""
+    return source_languages[0] if len(source_languages) == 1 else "mixed"
 
 
 def _entity_base_from_id(entity_id: str) -> str:
@@ -311,6 +309,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     store_paths = ensure_store(repo_path=repo_path, schema_path=schema_path)
 
     resolved_repo = repo_path.resolve()
+    frontends, extensions = resolve_frontend_config(repo_path, config)
     compression_level = resolve_compression_level(config)
     compact_mode = bool(config.get("compact_mode", False))
     passthrough_threshold = int(config.get("passthrough_threshold", 12))
@@ -320,7 +319,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     # -----------------------------------------------------------------------
     all_files = discover_source_files(
         repo_path=repo_path,
-        extensions=config.get("extensions", [".py"]),
+        extensions=extensions,
         hidden_dirs=config.get("hidden_dirs", []),
     )
 
@@ -328,6 +327,9 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     mapping_conn: Optional[sqlite3.Connection] = None
     try:
         changed_files, unchanged_files = _detect_changes(entities_conn, all_files, repo_path)
+        source_languages = sorted({get_frontend_for_file(file_path).name for file_path in all_files})
+        if not source_languages:
+            source_languages = [frontend.name for frontend in frontends]
 
         # Build set of all current relative paths for stale detection
         all_rel_paths: set[str] = set()
@@ -362,6 +364,8 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
                 "files_scanned": len(all_files),
                 "files_changed": 0,
                 "files_unchanged": len(unchanged_files),
+                "source_language": _primary_language(source_languages),
+                "source_languages": source_languages,
                 "compression_level": compression_level,
             }
 
@@ -374,10 +378,16 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         file_sizes: Dict[str, int] = {}
         bare_entities: List[dict] = []
         changed_rel_paths: List[str] = []
-        package_roots = discover_package_roots(repo_path)
         file_deps: Dict[str, str] = {}
+        internal_roots_by_language = {
+            frontend.name: frontend.discover_internal_roots(repo_path)
+            for frontend in frontends
+        }
+
+        cached_trees: Dict[str, object] = {}  # rel_path -> parsed tree
 
         for file_path in changed_files:
+            frontend = get_frontend_for_file(file_path)
             rel_path = file_path.resolve().relative_to(resolved_repo).as_posix()
             changed_rel_paths.append(rel_path)
             content_hash = compute_file_content_hash(file_path)
@@ -385,7 +395,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             file_sizes[rel_path] = file_path.stat().st_size
 
             try:
-                tree = parse_ast(file_path)
+                tree = frontend.parse_ast(file_path)
             except (ValueError, SyntaxError) as e:
                 print(f"Skipping {file_path}: {e}")
                 continue
@@ -394,18 +404,25 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
                 file_domains[rel_path] = "unknown"
                 continue
 
+            cached_trees[rel_path] = tree
+
             # Use relative path for classification to avoid matching parent directories
             # (e.g., repo stored in /project/tests/repos/ shouldn't classify all files as "tests")
-            category = classify_file(Path(rel_path), tree)
-            domain = classify_domain(Path(rel_path), tree)
+            category = frontend.classify_file(Path(rel_path), tree)
+            domain = frontend.classify_domain(Path(rel_path), tree)
             file_classifications[rel_path] = category
             file_domains[rel_path] = domain
 
-            all_imports = extract_import_names(tree, file_path)
-            internal_deps, _ = split_imports(all_imports, package_roots)
+            all_imports = frontend.extract_import_names(tree, file_path=file_path, repo_path=repo_path)
+            internal_deps, _ = frontend.split_imports(
+                all_imports,
+                internal_roots=internal_roots_by_language[frontend.name],
+                file_path=file_path,
+                repo_path=repo_path,
+            )
             file_deps[rel_path] = ",".join(internal_deps)
 
-            bare = parse_bare_entities_from_file(file_path)
+            bare = frontend.parse_entities_from_file(file_path, include_semantic=False, tree=tree)
             for entity in bare:
                 entity["file_path"] = rel_path
             bare_entities.extend(bare)
@@ -437,11 +454,16 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         # -------------------------------------------------------------------
         full_entities: List[dict] = []
         for file_path in changed_files:
+            frontend = get_frontend_for_file(file_path)
             rel_path = file_path.resolve().relative_to(resolved_repo).as_posix()
-            parsed = parse_entities_from_file(file_path)
+            tree = cached_trees.get(rel_path)
+            if tree is None and rel_path not in cached_trees:
+                continue  # file was skipped in Pass 1
+            parsed = frontend.parse_entities_from_file(file_path, include_semantic=True, tree=tree)
             for entity in parsed:
                 entity["file_path"] = rel_path
             full_entities.extend(parsed)
+        del cached_trees  # free memory after Pass 3
 
         _assign_entity_ids(full_entities, existing_ids_by_base=existing_ids_by_base)
 
@@ -509,7 +531,10 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         total_entities = entities_conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         total_ir_rows = entities_conn.execute("SELECT COUNT(*) FROM ir_rows").fetchone()[0]
 
-        _upsert_index_meta(entities_conn, "python_files_indexed", str(len(all_files)))
+        stored_source_language = _primary_language(source_languages)
+        _upsert_index_meta(entities_conn, "source_language", stored_source_language)
+        _upsert_index_meta(entities_conn, "source_languages", json.dumps(source_languages))
+        _upsert_index_meta(entities_conn, "source_files_indexed", str(len(all_files)))
         _upsert_index_meta(entities_conn, "entities", str(total_entities))
         _upsert_index_meta(entities_conn, "ir_rows", str(total_ir_rows))
         _upsert_index_meta(entities_conn, "compression_level", compression_level)
@@ -534,6 +559,8 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         "files_scanned": len(all_files),
         "files_changed": len(changed_files),
         "files_unchanged": len(unchanged_files),
+        "source_language": _primary_language(source_languages),
+        "source_languages": source_languages,
         "entities_indexed": len(full_entities),
         "total_entities": total_entities,
         "ir_rows": len(ir_rows),

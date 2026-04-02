@@ -1,7 +1,7 @@
 """Tests for stable ID generation."""
 
 import pytest
-from ir.stable_ids import compact_stem, make_entity_base_id, make_stable_id, parse_stable_id
+from ir.stable_ids import compact_stem, make_entity_base_id, make_module_base_id, make_stable_id, parse_stable_id, type_prefix_for_kind
 
 
 class TestCompactStem:
@@ -69,3 +69,24 @@ class TestStableIdParsing:
         assert parse_stable_id("AMT.RDTKN.03") == ("AMT", "RDTKN.03")
         assert parse_stable_id("FN.AUTH") == ("FN", "AUTH")
         assert parse_stable_id("CLS.USER.02") == ("CLS", "USER.02")
+
+
+class TestMakeModuleBaseId:
+    def test_strips_compound_typescript_suffix(self):
+        assert make_module_base_id("src/types/api.d.ts") == "API"
+
+
+class TestRustKindPrefixes:
+    def test_rust_kind_prefixes(self):
+        assert type_prefix_for_kind("struct") == "ST"
+        assert type_prefix_for_kind("enum") == "EN"
+        assert type_prefix_for_kind("trait") == "TRT"
+        assert type_prefix_for_kind("trait_method") == "TMT"
+        assert type_prefix_for_kind("constant") == "CST"
+
+
+class TestTypeScriptKindPrefixes:
+    def test_typescript_kind_prefixes(self):
+        assert type_prefix_for_kind("interface") == "IFC"
+        assert type_prefix_for_kind("type_alias") == "TYP"
+        assert type_prefix_for_kind("namespace") == "NS"

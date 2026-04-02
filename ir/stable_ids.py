@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import re
 
+_COMPOUND_SUFFIXES = (".d.ts",)
+
 
 def compact_stem(value: str) -> str:
     """Generate compact identifier via vowel-stripping.
@@ -34,7 +36,16 @@ def type_prefix_for_kind(kind: str) -> str:
         "async_function": "AFN",
         "method": "MT",
         "async_method": "AMT",
+        "trait_method": "TMT",
         "class": "CLS",
+        "struct": "ST",
+        "enum": "EN",
+        "trait": "TRT",
+        "interface": "IFC",
+        "type_alias": "TYP",
+        "namespace": "NS",
+        "constant": "CST",
+        "impl_block": "IMP",
         "module": "MD",
     }.get(kind, "ENT")
 
@@ -78,7 +89,14 @@ def make_module_base_id(file_path: str) -> str:
     """
     parts = file_path.replace("\\", "/").rsplit("/", 1)
     filename = parts[-1] if len(parts) > 1 else parts[0]
-    stem = filename.rsplit(".", 1)[0]
+    lower = filename.lower()
+    stem = ""
+    for suffix in _COMPOUND_SUFFIXES:
+        if lower.endswith(suffix):
+            stem = filename[:-len(suffix)]
+            break
+    if not stem:
+        stem = filename.rsplit(".", 1)[0]
     if stem == "__init__":
         # authentication/__init__.py -> ATHN instead of INIT
         parent = parts[0] if len(parts) > 1 else "__init__"

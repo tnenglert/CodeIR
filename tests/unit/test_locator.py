@@ -1,9 +1,15 @@
-"""Tests for entity extraction via the locator module."""
+"""Tests for entity extraction via the Python language frontend."""
 
 import tempfile
 import pytest
 from pathlib import Path
-from index.locator import parse_entities_from_file
+from index.languages import get_frontend_for_file
+
+
+def parse_entities_from_file(file_path: Path):
+    """Convenience wrapper for tests — dispatches to the right frontend."""
+    frontend = get_frontend_for_file(file_path)
+    return frontend.parse_entities_from_file(file_path, include_semantic=True)
 
 
 class TestParseEntities:

@@ -1,7 +1,7 @@
 """Score model responses against tool task ground truth.
 
 Usage:
-    python score_tool_tasks.py <response_file> [--task-pack task_pack_tools_v1.json]
+    python score_tool_tasks.py <response_file> --task-pack <task_pack.json>
 
 Response file format (JSON):
 {
@@ -310,7 +310,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Score model responses against task pack")
     parser.add_argument("response_file", type=Path, help="JSON file with model responses")
-    parser.add_argument("--task-pack", type=Path, default=Path(__file__).parent / "task_pack_tools_v1.json")
+    parser.add_argument("--task-pack", type=Path, required=True, help="JSON task pack to score against")
     parser.add_argument("--output", type=Path, help="Output JSON file for results")
     args = parser.parse_args()
 
