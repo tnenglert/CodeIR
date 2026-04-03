@@ -306,6 +306,28 @@ class TestGrepEntities:
         assert len(results_sensitive) == 0
         assert len(results_insensitive) == 1
 
+    def test_grep_normalizes_escaped_pipe_alternation(self, tmp_path):
+        store_paths = _make_test_store(tmp_path)
+        src = tmp_path / "a.py"
+        src.write_text("alpha()\nbeta()\ngamma()\n")
+        conn = connect(store_paths["entities_db"])
+        _populate_entities(conn, [
+            {"id": "FOO", "kind": "function", "name": "foo",
+             "qualified_name": "mod.foo", "file_path": "a.py",
+             "start_line": 1, "end_line": 3},
+        ])
+        _populate_ir_rows(conn, [
+            {"entity_id": "FOO", "mode": "Behavior", "ir_text": "FN FOO"},
+        ])
+        conn.close()
+
+        plain = grep_entities("alpha|beta", tmp_path)
+        escaped = grep_entities(r"alpha\|beta", tmp_path)
+
+        assert plain == escaped
+        assert len(escaped) == 1
+        assert [m["text"] for m in escaped[0]["matches"]] == ["alpha()", "beta()"]
+
 
 # ---------------------------------------------------------------------------
 # compute_impact

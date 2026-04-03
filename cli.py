@@ -897,12 +897,23 @@ def _ensure_agent_rules(repo_path: Path) -> None:
 
 def cmd_search(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    query_str = " ".join(args.query)
+    category = getattr(args, "category", None)
     results = search_entities(
-        query=" ".join(args.query), repo_path=repo_path, limit=args.limit,
-        category=getattr(args, "category", None),
+        query=query_str, repo_path=repo_path, limit=args.limit,
+        category=category,
     )
     if not results:
-        query_str = " ".join(args.query)
+        if category:
+            fallback_results = search_entities(query=query_str, repo_path=repo_path, limit=3, category=None)
+            if fallback_results:
+                match_word = "match" if len(fallback_results) == 1 else "matches"
+                print(
+                    f"No entities found in category '{category}'. "
+                    f"{len(fallback_results)} {match_word} found without the category filter. "
+                    f"Try removing --category or using: codeir grep \"{query_str}\" to search file contents."
+                )
+                return
         print(f"No entities found. Try: codeir grep \"{query_str}\" to search file contents.")
         return
 

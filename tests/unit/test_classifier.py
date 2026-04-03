@@ -48,6 +48,16 @@ class TestClassifyByDirectory:
         assert _classify_by_directory(Path("tests/test_foo.py")) == "tests"
         assert _classify_by_directory(Path("src/tests/conftest.py")) == "tests"
 
+    def test_services_directory(self):
+        """Files in services/ directories are classified as core_logic."""
+        assert _classify_by_directory(Path("services/report_agent.py")) == "core_logic"
+        assert _classify_by_directory(Path("src/services/reporting.py")) == "core_logic"
+
+    def test_models_directory_no_longer_forces_schema(self):
+        """models/ directories no longer auto-classify as schema."""
+        assert _classify_by_directory(Path("models/user.py")) is None
+        assert _classify_by_directory(Path("src/models/report_agent.py")) is None
+
 
 class TestClassifyDomain:
     """Tests for domain classification."""

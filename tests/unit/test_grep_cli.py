@@ -162,3 +162,30 @@ def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
     cli.cmd_grep(args)
 
     assert captured["path_filter"] == ["lib", "test", "docs/*.rst"]
+
+
+def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_grep_entities(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "grep_entities", fake_grep_entities)
+
+    args = Namespace(
+        pattern=r"alpha\|beta",
+        repo_path=tmp_path,
+        level="Behavior",
+        limit=50,
+        ignore_case=False,
+        context=0,
+        path=None,
+        verbose=False,
+        evidence=False,
+        count=False,
+    )
+
+    cli.cmd_grep(args)
+
+    assert captured["pattern"] == r"alpha\|beta"

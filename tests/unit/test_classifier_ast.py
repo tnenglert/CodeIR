@@ -33,15 +33,14 @@ def _visit(code: str) -> _ClassificationVisitor:
 
 class TestClassificationVisitor:
     def test_route_decorators(self):
-        """@app.get('/users') triggers both Call and Attribute checks in the visitor."""
+        """Decorated route handlers count once each."""
         v = _visit(
             "@app.get('/users')\n"
             "def get_users(): pass\n"
             "@app.post('/users')\n"
             "def create_user(): pass\n"
         )
-        # Each @app.get() fires both the Call (func_name) and Attribute (dec.attr) branches
-        assert v.route_decorator_count >= 2
+        assert v.route_decorator_count == 2
 
     def test_schema_bases(self):
         v = _visit(
@@ -76,7 +75,8 @@ class TestClassificationVisitor:
             "    host: str\n"
         )
         assert v.has_dataclass_decorator is True
-        assert v.schema_base_count == 1
+        assert v.dataclass_count == 1
+        assert v.schema_base_count == 0  # dataclass tracked separately
 
     def test_top_level_assigns(self):
         v = _visit("X = 1\nY = 2\nZ = 3\n")
@@ -115,10 +115,31 @@ class TestClassifyByAst:
         cat, _ = _classify_by_ast(tree)
         assert cat == "router"
 
+    def test_single_route_large_file_not_router(self):
+        """One route in a larger file should not dominate classification."""
+        tree = _parse(
+            "@app.get('/a')\ndef a(): pass\n"
+            "def b(): pass\n"
+            "def c(): pass\n"
+            "def d(): pass\n"
+        )
+        cat, _ = _classify_by_ast(tree)
+        assert cat is None
+
     def test_schema_heavy(self):
         tree = _parse(
             "class A(BaseModel):\n    x: int\n"
             "class B(BaseModel):\n    y: str\n"
+        )
+        cat, _ = _classify_by_ast(tree)
+        assert cat == "schema"
+
+    def test_dataclass_only_small_file_is_schema(self):
+        """A small file of dataclasses should still count as schema-like."""
+        tree = _parse(
+            "from dataclasses import dataclass\n"
+            "@dataclass\nclass Config:\n    host: str\n"
+            "@dataclass\nclass State:\n    active: bool\n"
         )
         cat, _ = _classify_by_ast(tree)
         assert cat == "schema"
@@ -154,6 +175,66 @@ class TestClassifyByAst:
         cat, _ = _classify_by_ast(tree)
         assert cat is None  # no strong signal
 
+    def test_schema_not_dominant_when_many_methods(self):
+        """The MiroFish bug: 2 BaseModel classes + many methods = core_logic, not schema."""
+        # Simulate report_agent.py: 2 dataclasses + 1 big class with 20 methods
+        code = (
+            "from dataclasses import dataclass\n"
+            "@dataclass\nclass Report:\n    title: str\n"
+            "@dataclass\nclass ReportSection:\n    name: str\n"
+            "class ReportAgent:\n"
+            + "".join(f"    def method_{i}(self): pass\n" for i in range(20))
+        )
+        tree = _parse(code)
+        cat, _ = _classify_by_ast(tree)
+        assert cat is None  # too much behavioral density for schema
+
+    def test_schema_not_dominant_with_basemodel_and_service_logic(self):
+        """Schema bases should not override obviously behavior-heavy service files."""
+        code = (
+            "class Report(BaseModel):\n    title: str\n"
+            "class ReportSection(BaseModel):\n    name: str\n"
+            "class ReportManager:\n"
+            + "".join(f"    def action_{i}(self): pass\n" for i in range(18))
+        )
+        tree = _parse(code)
+        cat, _ = _classify_by_ast(tree)
+        assert cat is None
+
+    def test_schema_dominant_with_few_methods(self):
+        """Pure schema file: several BaseModel classes, minimal logic."""
+        code = (
+            "class User(BaseModel):\n    name: str\n"
+            "class Item(BaseModel):\n    title: str\n"
+            "class Order(BaseModel):\n    total: float\n"
+            "def validate_order(o): pass\n"
+        )
+        tree = _parse(code)
+        cat, _ = _classify_by_ast(tree)
+        assert cat == "schema"
+
+    def test_dataclass_half_weight(self):
+        """Dataclasses contribute half-weight to schema signal."""
+        # 2 dataclasses = effective 1.0, not enough alone
+        code = (
+            "from dataclasses import dataclass\n"
+            "@dataclass\nclass Config:\n    host: str\n"
+            "@dataclass\nclass State:\n    active: bool\n"
+            "class Manager:\n"
+            + "".join(f"    def method_{i}(self): pass\n" for i in range(15))
+        )
+        tree = _parse(code)
+        cat, _ = _classify_by_ast(tree)
+        assert cat is None  # dataclasses alone don't dominate
+
+    def test_router_no_double_count(self):
+        """@app.get('/x') should count as 1 route, not 2."""
+        code = "@app.get('/a')\ndef a(): pass\n"
+        tree = _parse(code)
+        v = _ClassificationVisitor()
+        v.visit(tree)
+        assert v.route_decorator_count == 1
+
 
 # ---------------------------------------------------------------------------
 # classify_file (full pipeline)
@@ -181,6 +262,11 @@ class TestClassifyFile:
         tree = _parse("def helper(): pass\n")
         assert classify_file(Path("stuff.py"), tree) == "utils"
 
+    def test_small_service_named_file_still_utils_without_other_signals(self):
+        """Name alone should not force core_logic outside explicit directory hints."""
+        tree = _parse("def run(): pass\n")
+        assert classify_file(Path("report_agent.py"), tree) == "utils"
+
     def test_fallback_constants_no_defs(self):
         """No functions/classes but has assigns → constants."""
         tree = _parse("X = 1\n")
@@ -195,6 +281,29 @@ class TestClassifyFile:
         """Many definitions → core_logic."""
         tree = _parse("def a(): pass\ndef b(): pass\ndef c(): pass\ndef d(): pass\n")
         assert classify_file(Path("stuff.py"), tree) == "core_logic"
+
+    def test_services_directory_is_core_logic(self):
+        tree = _parse("class ReportAgent:\n    def run(self): pass\n")
+        assert classify_file(Path("services/report_agent.py"), tree) == "core_logic"
+
+    def test_models_directory_not_unconditional_schema(self):
+        """models/ directory no longer forces schema — AST analysis runs."""
+        tree = _parse("def a(): pass\ndef b(): pass\ndef c(): pass\ndef d(): pass\n")
+        result = classify_file(Path("models/user.py"), tree)
+        assert result != "schema"  # should fall through to AST/fallback
+
+    def test_models_directory_can_still_be_schema_from_ast(self):
+        """Removing the directory rule should not prevent true schema files."""
+        tree = _parse(
+            "class User(BaseModel):\n    name: str\n"
+            "class Item(BaseModel):\n    title: str\n"
+        )
+        assert classify_file(Path("models/user.py"), tree) == "schema"
+
+    def test_filename_rule_still_overrides_services_directory(self):
+        """Priority order should remain filename before directory."""
+        tree = _parse("class ReportAgent:\n    def run(self): pass\n")
+        assert classify_file(Path("services/test_report_agent.py"), tree) == "tests"
 
 
 # ---------------------------------------------------------------------------

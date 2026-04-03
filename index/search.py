@@ -13,6 +13,16 @@ from typing import Any, Dict, List, Optional
 from index.store.db import connect, column_names
 
 
+def _normalize_grep_pattern(pattern: str) -> str:
+    """Normalize common grep-style alternation escapes for Python regex.
+
+    Models sometimes pass ``\\|`` because many grep variants accept escaped
+    alternation in ordinary usage. Python's ``re`` treats ``|`` as alternation
+    already, so normalize that form here for compatibility.
+    """
+    return pattern.replace(r"\|", "|")
+
+
 def search_entities(query: str, repo_path: Path, limit: int = 50, category: Optional[str] = None) -> List[Dict[str, object]]:
     """Return matching entities using LIKE search. Multiple space-separated terms are ORed,
     but entities matching more terms rank higher than those matching fewer."""
@@ -147,6 +157,7 @@ def grep_entities(
         raise FileNotFoundError(f"entities DB not found: {db_path}")
 
     flags = re.IGNORECASE if ignore_case else 0
+    pattern = _normalize_grep_pattern(pattern)
     try:
         regex = re.compile(pattern, flags)
     except re.error as exc:

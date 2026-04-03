@@ -75,7 +75,7 @@ _DIR_KEYWORDS: Dict[str, str] = {
     "config": "config",
     "configuration": "config",
     "schemas": "schema",
-    "models": "schema",
+    "services": "core_logic",
 }
 
 
@@ -103,6 +103,7 @@ class _ClassificationVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.route_decorator_count = 0
         self.schema_base_count = 0
+        self.dataclass_count = 0
         self.exception_class_count = 0
         self.total_class_count = 0
         self.total_function_count = 0
@@ -123,12 +124,12 @@ class _ClassificationVisitor(ast.NodeVisitor):
             if base_name in {"Exception", "BaseException", "Error"} or base_name.endswith("Error") or base_name.endswith("Exception"):
                 self.exception_class_count += 1
 
-        # Check decorators
+        # Check decorators — dataclass tracked separately from schema bases
         for dec in node.decorator_list:
             dec_name = _get_name(dec)
             if dec_name == "dataclass":
                 self.has_dataclass_decorator = True
-                self.schema_base_count += 1
+                self.dataclass_count += 1
 
         self._depth += 1
         self.generic_visit(node)
@@ -136,18 +137,23 @@ class _ClassificationVisitor(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.total_function_count += 1
+        counted_route = False
         for dec in node.decorator_list:
+            if counted_route:
+                break
             dec_name = _get_name(dec)
             if dec_name in _ROUTE_DECORATORS:
                 self.route_decorator_count += 1
-            # Also check for app.route / router.get style
-            if isinstance(dec, ast.Call):
+                counted_route = True
+            elif isinstance(dec, ast.Call):
                 func_name = _get_name(dec.func)
                 if func_name in _ROUTE_DECORATORS:
                     self.route_decorator_count += 1
+                    counted_route = True
             elif isinstance(dec, ast.Attribute):
                 if dec.attr in _ROUTE_DECORATORS:
                     self.route_decorator_count += 1
+                    counted_route = True
         self._depth += 1
         self.generic_visit(node)
         self._depth -= 1
@@ -322,6 +328,10 @@ def _classify_by_ast(
     """Classify by AST structural signals.
 
     Returns (category_or_None, visitor) so the visitor can be reused by the fallback.
+
+    Schema classification uses dominance logic: schema signals must represent
+    a significant fraction of the file's content. A file with 2 BaseModel classes
+    and 40 methods is core_logic with embedded schemas, not a schema file.
     """
     if visitor is None:
         visitor = _ClassificationVisitor()
@@ -349,10 +359,17 @@ def _classify_by_ast(
     if v.route_decorator_count == 1 and v.total_function_count <= 3:
         return "router", v
 
-    # Schema-heavy file
-    if v.schema_base_count >= 2:
-        return "schema", v
-    if v.schema_base_count == 1 and v.total_class_count <= 3 and v.total_function_count <= 2:
+    # Schema classification with dominance check.
+    # Effective schema signal: full-weight for BaseModel/Schema bases,
+    # half-weight for dataclasses (commonly used for internal state, not just schemas).
+    effective_schema = v.schema_base_count + v.dataclass_count * 0.5
+    behavioral_density = v.total_function_count + v.total_class_count
+    schema_dominant = (
+        effective_schema >= 2 and behavioral_density <= effective_schema * 5
+    ) or (
+        effective_schema >= 1 and v.total_class_count <= 3 and v.total_function_count <= 2
+    )
+    if schema_dominant:
         return "schema", v
 
     # Compat module
