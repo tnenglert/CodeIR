@@ -30,7 +30,7 @@ def get_entity_with_ir(
     if has_mode:
         row = conn.execute(
             "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.end_line, e.kind, "
-            "e.module_id, e.complexity_class, r.ir_text, r.mode "
+            "e.module_id, e.complexity_class, r.ir_text, r.ir_json, r.mode "
             "FROM entities AS e JOIN ir_rows AS r ON r.entity_id = e.id "
             "WHERE e.id = ? AND r.mode = ? LIMIT 1",
             (entity_id, mode),
@@ -38,7 +38,7 @@ def get_entity_with_ir(
     else:
         row = conn.execute(
             "SELECT e.id AS entity_id, e.qualified_name, e.file_path, e.start_line, e.end_line, e.kind, "
-            "r.ir_text "
+            "r.ir_text, r.ir_json "
             "FROM entities AS e JOIN ir_rows AS r ON r.entity_id = e.id "
             "WHERE e.id = ? LIMIT 1",
             (entity_id,),
@@ -58,6 +58,10 @@ def get_entity_with_ir(
         "kind": row["kind"],
         "ir_text": row["ir_text"],
     }
+    try:
+        result["ir_json"] = json.loads(row["ir_json"]) if row["ir_json"] else {}
+    except (json.JSONDecodeError, TypeError):
+        result["ir_json"] = {}
     if has_mode:
         result["mode"] = row["mode"]
         result["module_id"] = row["module_id"]

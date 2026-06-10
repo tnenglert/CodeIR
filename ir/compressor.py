@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from index.locator import extract_code_slice
 from ir.stable_ids import make_pattern_id
@@ -128,7 +128,11 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
                    pattern_id: str, param_types: List[str],
                    return_type: Optional[str], module_category: str,
                    module_domain: str = "") -> dict:
-    """Structured JSON representation for programmatic consumption."""
+    """Structured JSON representation for programmatic consumption.
+
+    Receives raw (unabbreviated, untruncated) calls and bases — the DB holds
+    truth; compression is applied only when rendering ir_text.
+    """
     base = {
         "op": kind_to_opcode(entity["kind"]),
         "id": entity["id"],
@@ -148,7 +152,62 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
     elif level == "Index":
         base["pattern_id"] = pattern_id
         base["category"] = module_category
+        if module_domain and module_domain not in ("unknown", "misc", ""):
+            base["domain"] = module_domain
     return base
+
+
+# ---------------------------------------------------------------------------
+# Plain rendering (render-time view over stored rows)
+# ---------------------------------------------------------------------------
+
+def render_plain_row(row: Dict[str, Any]) -> str:
+    """Render a stored IR row with real names in place of compressed tokens.
+
+    Same field layout and omission rules as the dense format, but the entity's
+    qualified name appears after its ID and calls/bases use raw source names:
+
+        MT FNLZFLSH.02 orm.Session.finalize_flush C=register,items+3 F=IR A=3 #DB #CORE
+
+    Expects a fetch-style dict with kind, entity_id, qualified_name, ir_text,
+    and a parsed ir_json dict. Source-level rows (including passthrough
+    entities) return ir_text unchanged. Stores indexed before ir_json carried
+    raw names render whatever was stored — re-index for fully plain output.
+    """
+    ir_json = row.get("ir_json") or {}
+    level = str(ir_json.get("level", ""))
+    if not ir_json or level == "Source":
+        return str(row.get("ir_text", ""))
+
+    opcode = kind_to_opcode(str(row.get("kind", "")))
+    parts = [opcode, str(row.get("entity_id", "")), str(row.get("qualified_name", ""))]
+
+    if level == "Behavior":
+        calls = [c for c in ir_json.get("calls", []) if isinstance(c, str)]
+        if calls:
+            shown = calls[:6]
+            call_str = ",".join(shown)
+            if len(calls) > len(shown):
+                call_str += f"+{len(calls) - len(shown)}"
+            parts.append(f"C={call_str}")
+        flags = str(ir_json.get("flags", "") or "")
+        if flags:
+            parts.append(f"F={flags}")
+        assigns = int(ir_json.get("assigns", 0) or 0)
+        if assigns > 0:
+            parts.append(f"A={assigns}")
+        bases = [b for b in ir_json.get("bases", []) if isinstance(b, str)]
+        if bases:
+            parts.append(f"B={','.join(bases[:3])}")
+
+    domain = str(ir_json.get("domain", "") or "")
+    if domain and domain not in ("unknown", "misc"):
+        parts.append(f"#{domain.upper()}")
+    category = str(ir_json.get("category", "") or "")
+    if category:
+        parts.append(f"#{category[:4].upper()}")
+
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -195,10 +254,14 @@ def build_ir_rows(
         entity_name = entity.get("qualified_name", entity["name"])
         name_token = name_map.get(entity_name, entity_name)
         semantic = entity.get("semantic", {}) or {}
-        calls = [call_map.get(call, call) for call in semantic.get("calls", [])][:6]
+        raw_calls = [call for call in semantic.get("calls", []) if isinstance(call, str)]
+        raw_bases = [base for base in semantic.get("bases", []) if isinstance(base, str)]
+        # Full abbreviated list: _build_behavior truncates to 6 and appends the
+        # +N overflow marker itself (pre-truncating here silently dropped it).
+        calls = [call_map.get(call, call) for call in raw_calls]
         flags = semantic.get("flags", "")
         assigns = int(semantic.get("assigns", 0))
-        bases = [call_map.get(base, base) for base in semantic.get("bases", [])][:3]
+        bases = [call_map.get(base, base) for base in raw_bases][:3]
 
         type_sig = semantic.get("type_sig", {}) or {}
         param_types = list(type_sig.get("param_types", []))
@@ -206,7 +269,9 @@ def build_ir_rows(
 
         pattern_id = make_pattern_id(
             kind=entity["kind"], flags=flags,
-            call_count=len(calls), assigns=assigns,
+            # Capped at 6 to keep fingerprints identical to stores built when
+            # the call list was pre-truncated.
+            call_count=min(len(calls), 6), assigns=assigns,
         )
         module_category = module_categories.get(str(entity.get("file_path", "")), "core_logic")
         module_domain = module_domains.get(str(entity.get("file_path", "")), "")
@@ -228,7 +293,7 @@ def build_ir_rows(
                 # For passthrough entities, all non-Source levels get the Source representation
                 ir_text = _build_source(entity, repo_path) if repo_path else f"ENT {entity['id']}"
                 ir_json = _build_ir_json(
-                    entity, "Source", name_token, calls, flags, assigns, bases,
+                    entity, "Source", name_token, raw_calls, flags, assigns, raw_bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
             elif lvl == "Source":
@@ -237,7 +302,7 @@ def build_ir_rows(
                 else:
                     ir_text = _build_source(entity, repo_path)
                 ir_json = _build_ir_json(
-                    entity, "Source", name_token, calls, flags, assigns, bases,
+                    entity, "Source", name_token, raw_calls, flags, assigns, raw_bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
             elif lvl == "Behavior":
@@ -252,13 +317,13 @@ def build_ir_rows(
                     module_domain=module_domain,
                 )
                 ir_json = _build_ir_json(
-                    entity, "Behavior", name_token, calls, flags, assigns, bases,
+                    entity, "Behavior", name_token, raw_calls, flags, assigns, raw_bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
             elif lvl == "Index":
                 ir_text = _build_index(entity, pattern_id, module_category, module_domain)
                 ir_json = _build_ir_json(
-                    entity, "Index", name_token, calls, flags, assigns, bases,
+                    entity, "Index", name_token, raw_calls, flags, assigns, raw_bases,
                     pattern_id, param_types, return_type, module_category, module_domain,
                 )
             else:

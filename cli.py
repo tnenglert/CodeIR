@@ -349,6 +349,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--repo-path", type=Path, default=Path("."))
     p_show.add_argument("--level", default="Behavior", help="Compression level to show")
     p_show.add_argument("--full", action="store_true", help="Show full IR (skip smart pattern view)")
+    p_show.add_argument("--plain", action="store_true",
+                        help="Render with real names instead of compressed tokens")
 
     # expand
     p_expand = sub.add_parser("expand", help="Show raw source for entities (supports STEM.* wildcards)")
@@ -1103,8 +1105,10 @@ def cmd_show(args: argparse.Namespace) -> None:
         pattern_details = None
         db_path = repo_path / ".codeir" / "entities.db"
 
-        # Check global toggle and --full flag
-        patterns_disabled = not PATTERNS_ENABLED or getattr(args, "full", False)
+        # Check global toggle and --full/--plain flags (plain is a direct
+        # row rendering; the pattern smart view would hide its fields)
+        plain = getattr(args, "plain", False)
+        patterns_disabled = not PATTERNS_ENABLED or getattr(args, "full", False) or plain
 
         if args.level == "Behavior" and not patterns_disabled:
             from index.pattern_detector import get_entity_pattern_details
@@ -1141,7 +1145,11 @@ def cmd_show(args: argparse.Namespace) -> None:
             print(f"\nFull IR: codeir show {entity_id} --full")
         else:
             # Standard IR view (vanilla)
-            ir_text = result['ir_text']
+            if plain:
+                from ir.compressor import render_plain_row
+                ir_text = render_plain_row(result)
+            else:
+                ir_text = result['ir_text']
 
             # For Index level, add pattern marker if entity belongs to a pattern (unless patterns disabled)
             if args.level == "Index" and not patterns_disabled:
