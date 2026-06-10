@@ -223,7 +223,7 @@ def _section_compression(conn: sqlite3.Connection) -> str:
 
     # Determine if tiktoken was used (proxy: actual count exists + differs from estimate)
     has_tiktoken = src_tok > 0 and abs(src_tok - src_estimate) > src_estimate * 0.02
-    src_label = "tiktoken cl100k_base" if has_tiktoken else "4-chars-per-token estimate"
+    src_label = "tiktoken o200k_base" if has_tiktoken else "4-chars-per-token estimate"
 
     lines = [_DIVIDER, "Compression  (measured on this codebase)", ""]
 

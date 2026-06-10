@@ -6,7 +6,7 @@ from functools import lru_cache
 
 
 @lru_cache(maxsize=8)
-def _get_tiktoken_encoder(encoding_name: str = "cl100k_base"):
+def _get_tiktoken_encoder(encoding_name: str = "o200k_base"):
     try:
         import tiktoken  # type: ignore
     except Exception:
@@ -17,11 +17,15 @@ def _get_tiktoken_encoder(encoding_name: str = "cl100k_base"):
         return None
 
 
-def count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
+def count_tokens(text: str, encoding_name: str = "o200k_base") -> int:
     """Count text tokens for compression decisions.
 
     Uses tiktoken when available, then falls back to len(text)/4 approximation.
-    The encoding_name can be 'cl100k_base' (GPT-3.5/4) or 'o200k_base' (GPT-4o).
+    Default encoding is 'o200k_base' (GPT-4o and o-series, the most current
+    public tokenizer); 'cl100k_base' (GPT-3.5/4 era) remains selectable.
+    Note: counts are tokenizer-specific. For benchmark accounting, prefer the
+    usage fields the model API actually reports (including cache reads) over
+    any static count.
     """
     if not text:
         return 0
