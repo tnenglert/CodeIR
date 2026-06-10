@@ -16,6 +16,20 @@ python tests/eval/score_tool_tasks.py responses.json
 The original `task_pack_tools_v1.json` pack was retired along with the
 `_fastapi-users-master` benchmark fixture it depended on.
 
+The current focused A/B benchmark for `search` caller-count triage lives in:
+
+- `/Users/pluto/Desktop/CodeIR/tests/eval/task_pack_search_callers_ab_v1.json`
+- `/Users/pluto/Desktop/CodeIR/tests/eval/score_search_callers_ab.py`
+- `/Users/pluto/Desktop/CodeIR/tests/eval/SEARCH_CALLERS_AB_README.md`
+
+The current focused A/B benchmark for full-bearings orientation lives in:
+
+- `/Users/pluto/Desktop/CodeIR/tests/eval/task_pack_bearings_ab_v1.json`
+- `/Users/pluto/Desktop/CodeIR/tests/eval/score_bearings_ab.py`
+- `/Users/pluto/Desktop/CodeIR/tests/eval/BEARINGS_AB_README.md`
+
+That pack currently uses the Flask and Tryton fixture repos.
+
 When a new tool-eval pack is added, it should provide:
 
 | Type | Tasks | What it tests |

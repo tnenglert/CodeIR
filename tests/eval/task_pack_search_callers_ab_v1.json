@@ -1,0 +1,87 @@
+{
+  "name": "search_callers_ab_v1",
+  "description": "A/B benchmark for whether including Callers=N in codeir search results improves entity triage or adds noise.",
+  "response_format": "Use the standard tests/eval response JSON format with tool_calls, answer, and optional entities_mentioned.",
+  "tasks": [
+    {
+      "id": "S1",
+      "type": "triage_selection",
+      "prompt": "You want to change how callers, impact, and scope display inline metadata for each listed entity. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["FRMTNNTTDNTT"],
+        "key_file": "cli.py",
+        "bucket": "central"
+      }
+    },
+    {
+      "id": "S2",
+      "type": "triage_selection",
+      "prompt": "You want to change how `codeir expand --limit` truncates raw source output. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["FRMTSRC", "CMDXPND"],
+        "key_file": "cli.py",
+        "bucket": "leaf"
+      }
+    },
+    {
+      "id": "S3",
+      "type": "triage_selection",
+      "prompt": "You want to change the backend logic for `codeir search` ranking and filtering. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["SRCHNTTS"],
+        "key_file": "index/search.py",
+        "bucket": "central"
+      }
+    },
+    {
+      "id": "S4",
+      "type": "triage_selection",
+      "prompt": "You want to change how `codeir grep` normalizes escaped alternation like `\\|` before regex compilation. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["NRMLZGRPPTTR"],
+        "key_file": "index/search.py",
+        "bucket": "leaf"
+      }
+    },
+    {
+      "id": "S5",
+      "type": "triage_selection",
+      "prompt": "You need to change how CodeIR chooses a language frontend for an individual file path in a mixed-language repository. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["GTFRNTNDFRFL"],
+        "key_file": "index/languages.py",
+        "bucket": "central"
+      }
+    },
+    {
+      "id": "S6",
+      "type": "triage_selection",
+      "prompt": "You want to improve the error users get when Rust parser dependencies are missing. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["RQRRSTPRSR"],
+        "key_file": "index/rust_language.py",
+        "bucket": "leaf"
+      }
+    },
+    {
+      "id": "S7",
+      "type": "triage_selection",
+      "prompt": "You want to change how `codeir search` prints annotation metadata like caller counts in its result rows. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["CMDSRCH", "GTNTTYNNTTNS"],
+        "key_file": "cli.py",
+        "bucket": "central"
+      }
+    },
+    {
+      "id": "S8",
+      "type": "triage_selection",
+      "prompt": "You want to change how CodeIR fetches caller counts and pattern membership before rendering annotated entity lists. Using CodeIR, identify the single best entity to inspect first and explain briefly why.",
+      "ground_truth": {
+        "required_entities": ["GTNTTYNNTTNS"],
+        "key_file": "cli.py",
+        "bucket": "leaf"
+      }
+    }
+  ]
+}

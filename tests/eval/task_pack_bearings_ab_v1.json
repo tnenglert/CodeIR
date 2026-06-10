@@ -1,0 +1,95 @@
+{
+  "name": "bearings_ab_v1",
+  "description": "A/B benchmark for whether a conservative full-bearings refresh improves model orientation and first inspection choice without adding editorial noise across Flask and Tryton fixture repos.",
+  "response_format": "Use the standard tests/eval response JSON format with tool_calls, answer, and optional entities_mentioned.",
+  "tasks": [
+    {
+      "id": "B1",
+      "type": "orientation_selection",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, you want to change the server-side registry that loads and serves model classes across the application. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["POOL"],
+        "key_file": "trytond/trytond/pool.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "zone_selection"
+      }
+    },
+    {
+      "id": "B2",
+      "type": "orientation_selection",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, you want to change base behavior shared by SQL-backed server models. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["MDLSQL"],
+        "key_file": "trytond/trytond/model/modelsql.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "zone_selection"
+      }
+    },
+    {
+      "id": "B3",
+      "type": "orientation_selection",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, there are multiple `pyson.py` files. You want the server-side PYSON expression engine in `trytond`, not the GTK view helper or the client/proteus copies. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["PYSN.36"],
+        "key_file": "trytond/trytond/pyson.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "domain_signal"
+      }
+    },
+    {
+      "id": "B4",
+      "type": "orientation_selection",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, there are multiple `domain_inversion.py` files. You want the server-side tools implementation in `trytond`, not the client/common copy. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["DMNNVRSN.02"],
+        "key_file": "trytond/trytond/tools/domain_inversion.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "duplicate_name_disambiguation"
+      }
+    },
+    {
+      "id": "B5",
+      "type": "orientation_selection",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, you want to change how the main application object is defined. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["FLSK"],
+        "key_file": "src/flask/app.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "zone_selection"
+      }
+    },
+    {
+      "id": "B6",
+      "type": "orientation_selection",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, you want to change template rendering behavior rather than request dispatch. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["RNDRTMPLT", "DSPTCHNGJNJL"],
+        "key_file": "src/flask/templating.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "domain_signal"
+      }
+    },
+    {
+      "id": "B7",
+      "type": "orientation_selection",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, there are multiple `views.py` files. You want the class-based view machinery in Flask itself, not an example app. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["VIEW", "MTHDVW", "ASVW"],
+        "key_file": "src/flask/views.py",
+        "accepted_categories": ["core_logic", "router"],
+        "bucket": "duplicate_name_disambiguation"
+      }
+    },
+    {
+      "id": "B8",
+      "type": "orientation_selection",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, there are multiple blueprint-related files. You want the real Blueprint implementation, not request wrapper helpers. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, then identify the single best entity to inspect first and briefly explain why.",
+      "ground_truth": {
+        "required_entities": ["BLPRNT.02"],
+        "key_file": "src/flask/sansio/blueprints.py",
+        "accepted_categories": ["core_logic"],
+        "bucket": "duplicate_name_disambiguation"
+      }
+    }
+  ]
+}

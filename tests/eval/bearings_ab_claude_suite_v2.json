@@ -1,0 +1,40 @@
+{
+  "repo": "/Users/pluto/Desktop/CodeIR",
+  "permission_mode": "dangerously-skip-permissions",
+  "max_turns": 12,
+  "output": "/Users/pluto/Desktop/CodeIR/tests/eval/bearings_ab_claude_run_v2",
+  "prompts": [
+    {
+      "id": "B1",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, you want to change the server-side registry that loads and serves model classes across the application. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B2",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, you want to change base behavior shared by SQL-backed server models. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B3",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, there are multiple `pyson.py` files. You want the server-side PYSON expression engine in `trytond`, not the GTK view helper or the client/proteus copies. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B4",
+      "prompt": "In the Tryton fixture repo at `tests/_local/testRepositories/tryton-main`, there are multiple `domain_inversion.py` files. You want the server-side tools implementation in `trytond`, not the client/common copy. Start with `codeir bearings --repo-path tests/_local/testRepositories/tryton-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B5",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, you want to change how the main application object is defined. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B6",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, you want to change template rendering behavior rather than request dispatch. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B7",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, there are multiple `views.py` files. You want the class-based view machinery in Flask itself, not an example app. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    },
+    {
+      "id": "B8",
+      "prompt": "In the Flask fixture repo at `tests/_local/testRepositories/_flask-main`, there are multiple blueprint-related files. You want the real Blueprint implementation, not request wrapper helpers. Start with `codeir bearings --repo-path tests/_local/testRepositories/_flask-main`, identify the single best entity to inspect first, then verify that choice by reading actual source or IR with `codeir show`, `codeir expand`, `codeir scope`, `codeir callers`, `codeir impact`, or `codeir trace` before answering. Briefly explain why."
+    }
+  ]
+}
