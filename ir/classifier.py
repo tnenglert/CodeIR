@@ -806,7 +806,7 @@ def _classify_by_ast(
     ]
     if (len(body_without_imports) == 1
             and isinstance(body_without_imports[0], ast.Expr)
-            and isinstance(body_without_imports[0].value, (ast.Constant, ast.Str))):
+            and isinstance(body_without_imports[0].value, ast.Constant)):
         return "docs", v
 
     # Pure exception module
