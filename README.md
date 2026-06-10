@@ -12,9 +12,9 @@ CodeIR compresses that away. It extracts the structural and behavioral informati
 
 | Level | What it contains | When to use it |
 |---|---|---|
-| **Index** | Entity names, types, locations, categories | Orientation Ñ what exists and where |
-| **Behavior** | Call graphs, flags, assignments, domain tags | Understanding Ñ what it does without reading source |
-| **Source** | Raw source code for a single entity | Verification Ñ read only what you need to edit |
+| **Index** | Entity names, types, locations, categories | Orientation — what exists and where |
+| **Behavior** | Call graphs, flags, assignments, domain tags | Understanding — what it does without reading source |
+| **Source** | Raw source code for a single entity | Verification — read only what you need to edit |
 
 ## Compression
 
@@ -27,7 +27,7 @@ CodeIR compresses that away. It extracts the structural and behavioral informati
 
 *Estimated. 1 token per 4 characters.
 
-At Index level, CodeIR fits roughly 20,000 entities in a 200k context window. The same window holds fewer than 2,000 entities as raw source Ñ and only if you could perfectly select which files to load.
+At Index level, CodeIR fits roughly 20,000 entities in a 200k context window. The same window holds fewer than 2,000 entities as raw source — and only if you could perfectly select which files to load.
 
 ## Installation
 
@@ -82,7 +82,7 @@ codeir scope FLSH.04               # callers + callees + sibling methods
 
 ## Integration with Claude Code
 
-Add a `codeir.md` file to `.claude/rules/` in your repository. Claude Code reads this automatically at session start. A template is included at `templates/codeir.md` or you can generate one:
+CodeIR generates agent instruction files automatically — `.claude/rules/CodeIR.md` for Claude Code (read at session start) and `AGENTS.md`/skill files for Codex:
 
 ```bash
 codeir init                        # uses repo markers, then falls back to current runtime
@@ -90,7 +90,7 @@ codeir init --platform current     # generate only for the active runtime
 codeir init --platform all         # generate for Claude Code, Codex, and OpenClaw
 ```
 
-Once integrated, Claude Code uses CodeIR commands instead of reading raw files Ñ searching the IR, inspecting behavior summaries, and expanding only the source it needs.
+Once integrated, Claude Code uses CodeIR commands instead of reading raw files — searching the IR, inspecting behavior summaries, and expanding only the source it needs.
 
 ## Reading Behavior IR
 
