@@ -36,20 +36,25 @@ Bearings makes category-scoped search more effective.
 ```
 codeir search <terms> [--category <cat>]
 ```
-After `bearings`, prefer `--category` to narrow to the most likely area.
+After `bearings`, prefer `--category` to narrow to the most likely area. If
+`--category` returns nothing, remove it and retry more broadly.
 
 **Grep** — regex search across source, grouped by entity:
 ```
-codeir grep <pattern> [--path <dir_or_glob>] [--path <dir_or_glob>] [-i] [-C N] [-v]
-codeir grep <pattern> --evidence [--path <dir_or_glob>] [-i]
-codeir grep <pattern> --count [--path <dir_or_glob>] [--path <dir_or_glob>]
+codeir grep <pattern> [path ...] [--path <dir_or_glob>] [--category <cat>] [-i] [-C N] [-A N] [-B N] [-v]
+codeir grep <pattern> --evidence [path ...] [--path <dir_or_glob>] [--category <cat>] [-i]
+codeir grep <pattern> --count [path ...] [--path <dir_or_glob>] [--category <cat>]
 ```
 Use this for census/pattern tasks where you need all occurrences, but want
 entity context alongside matches.
+Use `|` for alternation in regex patterns; `codeir grep` also accepts `\|`
+for compatibility.
 Use `--evidence` instead of `rg -n ...` followed by `sed -n ...` when you
 want exact matching lines, nearby context, and the owning entity in one call.
 Use `--count` instead of `rg ... | wc -l` or `cut | sort | uniq -c` when you
 need grouped counts by entity/file without printing the match lines.
+Use positional paths or repeated `--path` flags to scope the search. Use
+`--category` to constrain grep to files in a module category.
 
 **Inspect** — compact behavior snapshots for one or more entities:
 ```
@@ -61,6 +66,7 @@ full implementation, skip `show` and use `expand`.
 **Expand** — raw source when you need to edit or verify:
 ```
 codeir expand <entity_id>              # single entity
+codeir expand <entity_id> --limit 20   # first 20 source lines per entity
 codeir expand <entity_id> --number     # source with line numbers for citation
 codeir expand <id1> <id2> <id3>        # multiple entities in one call
 codeir expand 'STEM.*'                 # all siblings (STEM, STEM.01, STEM.02, ...)
@@ -121,15 +127,15 @@ Use when the goal is to find patterns, conventions, or all occurrences
 across the repo.
 
 1. `codeir bearings` → orient
-2. `codeir grep "..." --path ...` → find matching entities
+2. `codeir grep "..." path/or/dir --path ... --category <cat>` → find matching entities
 3. `codeir show <id>` if you need behavior context
 4. `codeir expand <id>` only for representative examples
 
 Prefer `codeir grep` over raw text grep when entity ownership matters.
 Prefer `codeir grep --evidence` over `rg -n ...` then `sed -n ...` when you
 want exact lines and nearby proof without a separate source-read step.
-Use repeated `--path` flags instead of shell loops when you need one census
-across `lib`, `test`, `examples`, or `docs`.
+Use positional paths or repeated `--path` flags instead of shell loops when
+you need one census across `lib`, `test`, `examples`, or `docs`.
 
 **Trace mode** — path questions
 
@@ -154,6 +160,8 @@ line-range reads when the task is primarily "how do we get from A to B?"
   expect to edit the entity.
 - Use `expand --number` when you need exact source lines with stable line
   numbers for citation or proof.
+- Use `expand --limit N` when you only need the top N source lines to verify
+  structure before deciding whether to read the full entity.
 - Do not `show` an entity immediately before `expand` unless the `show`
   result could change your decision.
 - Do not `expand` weak matches just to be sure. Keep narrowing with
@@ -168,11 +176,12 @@ line-range reads when the task is primarily "how do we get from A to B?"
 
 Output from `callers`, `impact`, and `scope` includes inline triage metadata:
 ```
-  CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
-  GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+  CMPT.02         Callers=47               →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+  GTMVLN.03       Callers=3    Res=fuzzy               core_logic/move.py     [method, ~25 lines]
 ```
 
-- `[N callers]` — connectivity/importance
+- `Callers=N` — connectivity/importance
+- `Res=fuzzy` — caller edge is best-effort rather than exact
 - `→Pattern` — pattern membership (standard infrastructure)
 - `[kind, ~N lines]` — entity type and size
 

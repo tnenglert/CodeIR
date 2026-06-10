@@ -149,7 +149,7 @@ Semantic compression makes structure **explicit** and collapses unnecessary vari
 | **Pattern detection** | Fragmented by syntax | Normalized and clear |
 | **Architectural reasoning** | Implicit, buried | Explicit, structured |
 | **Relational understanding** | Context-limited | Graph-based, complete |
-| **Token efficiency** | ~100x more tokens | Behavior IR at ~3-5% of source |
+| **Token efficiency** | ~100x more tokens | Behavior IR at 6–20% of source (5–16× compression) |
 
 Instead of parsing noise, the model operates on a **consistent, low-entropy substrate**.
 

@@ -16,7 +16,7 @@ This document shows 10 entities from the Flask repository at all three compressi
 - `F=` flags: `R`=returns value, `E`=raises exception, `I`=has conditionals, `L`=loops, `T`=try/except, `W`=with
 - `A=` assignment count
 - `B=` base class (for classes)
-- `#DOMAIN` = domain tag (AUTH, HTTP, FS, PARSE, CLI, DB, CRYPTO, etc.) — omitted if unknown
+- `#DOMAIN` = domain tag (AUTH, HTTP, FS, PARSE, CLI, DB, CRYPTO, etc.) — omitted if unknown or misc
 - `#CAT` = category tag (CORE, TEST, ROUT, CONF, EXCE, etc.)
 
 ---

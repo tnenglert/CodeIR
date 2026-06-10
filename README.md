@@ -55,7 +55,7 @@ Find entities:
 ```bash
 codeir search "flush"              # search by name
 codeir search "session" --category core_logic  # filter by category
-codeir grep "listonly" --path orm/  # regex search grouped by entity
+codeir grep "listonly|readonly" orm/  # regex search grouped by entity
 ```
 
 Inspect without reading source:
@@ -68,7 +68,7 @@ codeir show FLSH.04 --level Index  # Index-level: just the basics
 Read source when you need it:
 
 ```bash
-codeir expand FLSH.04              # raw source for this entity only
+codeir expand FLSH.04 --limit 20   # first 20 source lines for this entity
 ```
 
 Understand dependencies:

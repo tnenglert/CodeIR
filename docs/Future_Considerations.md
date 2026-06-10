@@ -1,8 +1,8 @@
 # CodeIR – Future Considerations
 
-**Status:** Not part of v0.1
+**Status:** Not part of v0.2
 
-This document captures planned expansions, postponed ideas, and higher-complexity features intentionally excluded from v0.1.
+This document captures planned expansions, postponed ideas, and higher-complexity features intentionally excluded from the current release.
 
 These items are **not commitments**; they exist to prevent scope creep in the core spec.
 
@@ -115,18 +115,16 @@ Full semantic diffing capabilities:
 
 ## 7. Cross-Language Normalization
 
-Demonstrate language-agnostic compression with examples:
+Python, Rust, and TypeScript/TSX are fully supported as of v0.2. Potential future additions:
 
-### Comparison Matrix
-- **Python vs TypeScript vs Swift**
-- **Kotlin vs Java**
-- **C++ vs Rust**
-- **Go vs JavaScript**
+### Languages Under Consideration
+- **Swift / Kotlin / Java** — mobile and JVM ecosystems
+- **Go** — systems and backend services
 
-This requires additional normalizers in the compressor to handle:
-- Different control flow constructs
-- Language-specific idioms
-- Standard library variations
+### Remaining cross-language work
+- Unified call-graph stitching across language boundaries
+- Cross-language type mapping (e.g. Rust trait → TypeScript interface)
+- Language-specific idiom normalization (e.g. Go channels, Swift actors)
 
 ---
 
@@ -207,7 +205,7 @@ These are optional future expansions for **large codebases** where 4-letter comp
 
 These features will be prioritized based on:
 
-1. **User feedback** from v0.1 adoption
+1. **User feedback** from v0.2 adoption
 2. **Agent performance** bottlenecks
 3. **Real-world use cases** from production deployments
 4. **Community contributions** and requests
@@ -223,12 +221,12 @@ Have suggestions for future enhancements? Please:
 3. Provide concrete use cases
 4. Consider implementation complexity
 
-**Remember:** The goal of v0.1 is simplicity. Complex features need compelling justification.
+**Remember:** The goal is simplicity. Complex features need compelling justification.
 
 ---
 
 ## Related Documentation
 
-- [IR Specification v0.1](IR_spec.md) — Current stable spec
+- [IR Specification v0.2](IR_spec_as_built_v0_2.md) — Current stable spec
 - [Main README](../README.md) — Project overview
 - [Roadmap](../README.md#roadmap) — Implementation timeline

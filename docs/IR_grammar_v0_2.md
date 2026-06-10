@@ -24,11 +24,20 @@ record          ::= source-record
 
 ```bnf
 ; Entity kind prefix — exactly one of:
-entity-type     ::= "FN"            ; function
-                  | "AFN"           ; async function
-                  | "MT"            ; method
-                  | "AMT"           ; async method
-                  | "CLS"           ; class
+entity-type     ::= "FN"            ; function                  (Python, Rust, TypeScript)
+                  | "AFN"           ; async function             (Python, TypeScript)
+                  | "MT"            ; method                     (Python, Rust impl, TypeScript)
+                  | "AMT"           ; async method               (Python, TypeScript)
+                  | "TMT"           ; trait method               (Rust)
+                  | "CLS"           ; class                      (Python, TypeScript)
+                  | "ST"            ; struct                     (Rust)
+                  | "EN"            ; enum                       (Rust, TypeScript)
+                  | "TRT"           ; trait                      (Rust)
+                  | "IFC"           ; interface                  (TypeScript)
+                  | "TYP"           ; type alias                 (TypeScript)
+                  | "NS"            ; namespace / module         (TypeScript)
+                  | "CST"           ; constant                   (Rust, TypeScript)
+                  | "ENT"           ; fallback for unrecognised kinds
 
 ; Compact stem with optional collision suffix.
 ; Derived from the entity's name by the compact-stem algorithm (see § Compact Stem).
@@ -149,7 +158,7 @@ index-record    ::= entity-type SP entity-id
 ```
 
 **Constraints:**
-- `domain-tag` is omitted when the domain is unknown or cannot be classified.
+- `domain-tag` is omitted when the domain is `unknown` (indexer failure) or `misc` (classifier ran cleanly but found no specific domain).
 - `cate-tag` is always present.
 
 **Examples:**
@@ -168,8 +177,11 @@ MT VRFYNDPDT.02 #AUTH #CORE
 domain-tag      ::= "#" domain-token
 cate-tag        ::= "#" cate-token
 
-domain-token    ::= "HTTP" | "AUTH" | "CRYPTO" | "DB" | "FS"
-                  | "CLI"  | "ASYNC" | "PARSE" | "NET"
+domain-token    ::= "HTTP"  | "AUTH"  | "CRYPTO" | "DB"    | "FS"
+                  | "CLI"   | "ASYNC" | "PARSE"  | "NET"
+                  | "UI"    | "VALID" | "I18N"   | "TASK"  | "EVENT"
+                  | "LOG"   | "MAIL"  | "MEDIA"  | "ADMIN" | "CACHE"
+                  ; "unknown" and "misc" are not emitted as compressed IR tags
 
 cate-token      ::= "CORE" | "ROUT" | "SCHE" | "CONF" | "COMP"
                   | "EXCE" | "CONS" | "TEST" | "INIT" | "DOCS" | "UTIL"
@@ -191,6 +203,16 @@ cate-token      ::= "CORE" | "ROUT" | "SCHE" | "CONF" | "COMP"
 | `#ASYNC` | Async/concurrency primitives |
 | `#PARSE` | Parsing and serialization |
 | `#NET` | Network (non-HTTP) |
+| `#UI` | User interface (templates, GUI) |
+| `#VALID` | Validation and schema enforcement |
+| `#I18N` | Internationalization and localization |
+| `#TASK` | Background tasks and job queues |
+| `#EVENT` | Event dispatch and signals |
+| `#LOG` | Logging and observability |
+| `#MAIL` | Email delivery |
+| `#MEDIA` | Media processing and file storage |
+| `#ADMIN` | Admin interfaces |
+| `#CACHE` | Caching layers |
 
 | Category token | Concept |
 |---|---|
@@ -212,15 +234,15 @@ Tags are derived from classifier signals applied to the entity's module path, na
 
 ## Compact Stem Algorithm
 
-The `entity-id` is a compact, uppercase, consonant-biased abbreviation of the entity's original name. Implementations must apply the following algorithm to ensure stable, collision-aware IDs:
+The `entity-id` is a compact, uppercase, consonant-biased abbreviation of the entity's leaf name (the last component after any `.` separator). Implementations must apply the following algorithm to ensure stable, collision-aware IDs:
 
-1. **Normalize** the name: strip leading underscores, split on `_` and camelCase word boundaries into tokens.
-2. **Per token:** remove vowels (`a e i o u`, case-insensitive), keeping the leading character of each token even if it is a vowel. Retain all consonants.
-3. **Concatenate** the results of all tokens, uppercase the whole string.
+1. **Normalize:** strip all non-alphanumeric characters (underscores, hyphens, dots, etc.) from the name to produce a single combined string.
+2. **Short-name fast path:** if the combined string is ≤4 characters, uppercase it as-is and use it as the stem (e.g. `send` → `SEND`).
+3. **Vowel-strip:** for longer names, keep the first character unchanged and strip interior vowels (`a e i o u`, case-insensitive) from the remaining characters. Uppercase the result.
 4. **Truncate** to a maximum of 12 characters from the left.
 5. **Collision resolution:** if two entities in the same repository produce the same stem, append a dot and zero-padded 2-digit suffix to the second and subsequent collisions (e.g. `RQST`, `RQST.02`, `RQST.03`).
 
-The stem must be 2 characters minimum. Single-character names should be padded or use the full name uppercased.
+Note: the algorithm operates on the combined name string, not on individual `_`-split tokens. There is no camelCase splitting.
 
 **Examples:**
 
