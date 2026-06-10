@@ -6,13 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from index.store.db import (
+from index.db.db import (
     _connect_immutable,
+    _ensure_caller_import_cache_table,
     _ensure_callers_table,
     _ensure_calls_json_column,
     _ensure_entities_migrations,
     _ensure_file_metadata_table,
     _ensure_index_meta_table,
+    _ensure_modules_domain_column,
     _ensure_ir_rows_composite_pk,
     _ensure_modules_deps_column,
     _ensure_modules_table,
@@ -185,9 +187,22 @@ class TestMigrations:
         assert "deps_internal" in column_names(conn, "modules")
         conn.close()
 
+    def test_modules_domain_column_added(self):
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE modules (file_path TEXT PRIMARY KEY, category TEXT, "
+            "content_hash TEXT, entity_count INTEGER, indexed_at TEXT)"
+        )
+        _ensure_modules_domain_column(conn)
+        assert "domain" in column_names(conn, "modules")
+        row = conn.execute("SELECT domain FROM modules").fetchall()
+        assert row == []
+        conn.close()
+
     def test_modules_deps_column_idempotent(self):
         conn = sqlite3.connect(":memory:")
         _ensure_modules_table(conn)
+        _ensure_modules_domain_column(conn)
         _ensure_modules_deps_column(conn)
         _ensure_modules_deps_column(conn)  # should not raise
         conn.close()
@@ -221,6 +236,14 @@ class TestMigrations:
         assert table_exists(conn, "callers")
         cols = column_names(conn, "callers")
         assert {"entity_id", "caller_id", "caller_name", "caller_file", "resolution"} <= cols
+        conn.close()
+
+    def test_caller_import_cache_table(self):
+        conn = sqlite3.connect(":memory:")
+        _ensure_caller_import_cache_table(conn)
+        assert table_exists(conn, "caller_import_cache")
+        cols = column_names(conn, "caller_import_cache")
+        assert {"file_path", "content_hash", "import_map_json", "updated_at"} <= cols
         conn.close()
 
     def test_ir_rows_composite_pk_migration(self):
@@ -278,24 +301,24 @@ class TestMigrations:
 
 class TestEnsureStore:
     def test_creates_store_directory(self, tmp_path):
-        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "store" / "schema.json"
+        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "db" / "schema.json"
         paths = ensure_store(tmp_path, schema_path)
         assert paths["store_dir"].exists()
         assert paths["entities_db"].exists()
         assert paths["mapping_db"].exists()
 
     def test_idempotent(self, tmp_path):
-        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "store" / "schema.json"
+        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "db" / "schema.json"
         paths1 = ensure_store(tmp_path, schema_path)
         paths2 = ensure_store(tmp_path, schema_path)
         assert paths1 == paths2
 
     def test_all_tables_created(self, tmp_path):
-        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "store" / "schema.json"
+        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "db" / "schema.json"
         paths = ensure_store(tmp_path, schema_path)
 
         conn = sqlite3.connect(paths["entities_db"])
-        for table in ["entities", "ir_rows", "modules", "file_metadata", "index_meta", "callers"]:
+        for table in ["entities", "ir_rows", "modules", "file_metadata", "index_meta", "callers", "caller_import_cache"]:
             assert table_exists(conn, table), f"Missing table: {table}"
         conn.close()
 
@@ -311,7 +334,7 @@ class TestEnsureStore:
 
 class TestLoadSchema:
     def test_loads_json(self):
-        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "store" / "schema.json"
+        schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "db" / "schema.json"
         schema = load_schema(schema_path)
         assert "entities_db" in schema
         assert "mapping_db" in schema

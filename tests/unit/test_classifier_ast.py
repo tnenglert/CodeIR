@@ -357,9 +357,10 @@ class TestClassifyDomain:
         tree = _parse("import requests\n")
         assert classify_domain(Path("stuff.py"), tree) == "http"
 
-    def test_unknown_fallback(self):
+    def test_misc_fallback(self):
+        """Valid tree with no domain signals → misc."""
         tree = _parse("x = 1\n")
-        assert classify_domain(Path("stuff.py"), tree) == "unknown"
+        assert classify_domain(Path("stuff.py"), tree) == "misc"
 
 
 # ---------------------------------------------------------------------------
@@ -368,10 +369,11 @@ class TestClassifyDomain:
 
 class TestModuleIrLine:
     def test_basic(self):
-        line = to_module_ir_line("ID", "src/router.py", "router", 5, "auth,db")
+        line = to_module_ir_line("ID", "src/router.py", "router", 5, "auth,db", domain="http")
         assert "router.py" in line
         assert "cat:router" in line
         assert "entities:5" in line
+        assert "dom:http" in line
         assert "deps:auth,db" in line
 
     def test_common_name_includes_parent(self):
@@ -381,7 +383,16 @@ class TestModuleIrLine:
 
     def test_empty_deps(self):
         line = to_module_ir_line("ID", "foo.py", "core_logic", 1, "")
-        assert "deps:-" in line
+        assert "deps:" not in line
+
+    def test_unknown_domain_hidden(self):
+        line = to_module_ir_line("ID", "foo.py", "core_logic", 1, "", domain="unknown")
+        assert "dom:" not in line
+
+    def test_misc_domain_visible(self):
+        """misc is a real classification and should appear in the module IR line."""
+        line = to_module_ir_line("ID", "foo.py", "core_logic", 1, "", domain="misc")
+        assert "dom:misc" in line
 
     def test_unique_filename_no_parent(self):
         line = to_module_ir_line("ID", "src/my_unique_module.py", "core_logic", 10, "auth")

@@ -44,7 +44,11 @@ def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsy
         limit=50,
         ignore_case=False,
         context=0,
+        before_context=None,
+        after_context=None,
         path="lib",
+        path_positional=[],
+        category=None,
         verbose=False,
         evidence=True,
     )
@@ -53,6 +57,8 @@ def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsy
     out = capsys.readouterr().out
 
     assert captured["context"] == 2
+    assert captured["before_context"] == 2
+    assert captured["after_context"] == 2
     assert "IR: FN FOO C=bar F=IR A=2 #CORE" in out
     assert "12: alpha()" in out
     assert "18: beta()" in out
@@ -77,7 +83,11 @@ def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
         limit=50,
         ignore_case=False,
         context=1,
+        before_context=None,
+        after_context=None,
         path=None,
+        path_positional=[],
+        category=None,
         verbose=False,
         evidence=True,
     )
@@ -85,6 +95,8 @@ def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
     cli.cmd_grep(args)
 
     assert captured["context"] == 1
+    assert captured["before_context"] == 1
+    assert captured["after_context"] == 1
 
 
 def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path):
@@ -121,7 +133,11 @@ def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path
         limit=50,
         ignore_case=False,
         context=0,
+        before_context=None,
+        after_context=None,
         path=["lib", "test"],
+        path_positional=[],
+        category=None,
         verbose=False,
         evidence=False,
         count=True,
@@ -153,7 +169,11 @@ def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
         limit=50,
         ignore_case=False,
         context=0,
+        before_context=None,
+        after_context=None,
         path=["lib", "test", "docs/*.rst"],
+        path_positional=[],
+        category=None,
         verbose=False,
         evidence=False,
         count=False,
@@ -180,7 +200,11 @@ def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
         limit=50,
         ignore_case=False,
         context=0,
+        before_context=None,
+        after_context=None,
         path=None,
+        path_positional=[],
+        category=None,
         verbose=False,
         evidence=False,
         count=False,
@@ -189,3 +213,37 @@ def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
     cli.cmd_grep(args)
 
     assert captured["pattern"] == r"alpha\|beta"
+
+
+def test_cmd_grep_supports_before_after_context_and_category(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_grep_entities(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "grep_entities", fake_grep_entities)
+
+    args = Namespace(
+        pattern="alpha",
+        repo_path=tmp_path,
+        level="Behavior",
+        limit=50,
+        ignore_case=False,
+        context=0,
+        before_context=1,
+        after_context=3,
+        path=["lib"],
+        path_positional=["src/app.py"],
+        category="core_logic",
+        verbose=False,
+        evidence=False,
+        count=False,
+    )
+
+    cli.cmd_grep(args)
+
+    assert captured["before_context"] == 1
+    assert captured["after_context"] == 3
+    assert captured["category"] == "core_logic"
+    assert captured["path_filter"] == ["lib", "src/app.py"]

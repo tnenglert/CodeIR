@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
 
-from index.store.db import connect, table_exists, column_names
+from index.db.db import connect, table_exists, column_names
+from ir.classifier import DOMAIN_MISC, DOMAIN_UNKNOWN, classify_file_with_stage
 
 
 def _meta_int(conn: sqlite3.Connection, key: str, default: int = 0) -> int:
@@ -36,6 +38,71 @@ def _meta_json_list(conn: sqlite3.Connection, key: str) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _classification_quality(repo_path: Path, conn: sqlite3.Connection) -> Dict[str, Any]:
+    """Summarize classifier trust signals for normal product surfaces."""
+    if not table_exists(conn, "modules"):
+        return {
+            "structural_files": 0,
+            "fallback_files": 0,
+            "structural_percent": 0.0,
+            "fallback_percent": 0.0,
+            "specific_domains": 0,
+            "misc_domains": 0,
+            "unknown_domains": 0,
+            "specific_percent": 0.0,
+            "misc_percent": 0.0,
+            "unknown_percent": 0.0,
+        }
+
+    file_paths = [str(row[0]) for row in conn.execute("SELECT file_path FROM modules").fetchall()]
+    structural = 0
+    fallback = 0
+    for rel_path in file_paths:
+        path = Path(rel_path)
+        if path.suffix != ".py":
+            structural += 1
+            continue
+
+        abs_path = repo_path / rel_path
+        if not abs_path.exists():
+            fallback += 1
+            continue
+
+        try:
+            source = abs_path.read_text(encoding="utf-8", errors="ignore")
+            _, stage = classify_file_with_stage(path, ast.parse(source))
+            if stage <= 3:
+                structural += 1
+            else:
+                fallback += 1
+        except Exception:
+            fallback += 1
+
+    domain_counts = {
+        str(row[0] or DOMAIN_UNKNOWN): int(row[1])
+        for row in conn.execute(
+            "SELECT domain, COUNT(*) FROM modules GROUP BY domain"
+        ).fetchall()
+    }
+    total_files = len(file_paths)
+    misc = domain_counts.get(DOMAIN_MISC, 0)
+    unknown = domain_counts.get(DOMAIN_UNKNOWN, 0)
+    specific = max(0, total_files - misc - unknown)
+
+    return {
+        "structural_files": structural,
+        "fallback_files": fallback,
+        "structural_percent": (structural / total_files * 100.0) if total_files else 0.0,
+        "fallback_percent": (fallback / total_files * 100.0) if total_files else 0.0,
+        "specific_domains": specific,
+        "misc_domains": misc,
+        "unknown_domains": unknown,
+        "specific_percent": (specific / total_files * 100.0) if total_files else 0.0,
+        "misc_percent": (misc / total_files * 100.0) if total_files else 0.0,
+        "unknown_percent": (unknown / total_files * 100.0) if total_files else 0.0,
+    }
 
 
 def get_stats(repo_path: Path) -> Dict[str, Any]:
@@ -142,13 +209,14 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
         for row in cc_rows:
             complexity_stats[row[0]] = int(row[1])
 
+    classification_quality = _classification_quality(repo_path, entities_conn)
     abbreviation_count = int(mapping_conn.execute("SELECT COUNT(*) FROM abbreviations").fetchone()[0])
-
-    entities_conn.close()
-    mapping_conn.close()
 
     by_kind: List[Dict[str, Any]] = [{"kind": row[0], "count": int(row[1])} for row in by_kind_rows]
     coverage_pct = (files_with_entities / source_files_indexed * 100.0) if source_files_indexed else 0.0
+
+    entities_conn.close()
+    mapping_conn.close()
 
     return {
         "entity_count": total_entities,
@@ -173,4 +241,5 @@ def get_stats(repo_path: Path) -> Dict[str, Any]:
         "category_stats": category_stats,
         "complexity_stats": complexity_stats,
         "abbreviation_count": abbreviation_count,
+        "classification_quality": classification_quality,
     }

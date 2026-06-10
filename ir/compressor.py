@@ -17,6 +17,8 @@ from ir.token_count import count_tokens
 from index.locator import extract_code_slice
 
 VALID_LEVELS = {"Source", "Behavior", "Index", "all", "Behavior+Index"}
+# Arbitrary default tuned to keep tiny entities uncompressed; calibrate if your
+# repo wants more or less passthrough at index time.
 PASSTHROUGH_TOKEN_THRESHOLD_DEFAULT = 12
 
 
@@ -68,7 +70,12 @@ def _build_behavior(
     parts = [opcode, entity["id"]]
 
     if calls:
-        parts.append(f"C={','.join(calls[:6])}")
+        shown_calls = calls[:6]
+        call_str = ",".join(shown_calls)
+        remaining_calls = len(calls) - len(shown_calls)
+        if remaining_calls > 0:
+            call_str += f"+{remaining_calls}"
+        parts.append(f"C={call_str}")
     if flags:
         parts.append(f"F={flags}")
     if assigns > 0:
@@ -76,7 +83,7 @@ def _build_behavior(
     if bases:
         parts.append(f"B={','.join(bases[:3])}")
 
-    domain = module_domain.upper() if module_domain and module_domain != "unknown" else ""
+    domain = module_domain.upper() if module_domain and module_domain not in ("unknown", "misc", "") else ""
     category = module_category[:4].upper() if module_category else ""
     if domain:
         parts.append(f"#{domain}")
@@ -96,7 +103,7 @@ def _build_index(entity: dict, pattern_id: str, module_category: str, module_dom
     """
     opcode = kind_to_opcode(entity["kind"])
     cat = module_category[:4].upper() if module_category else "UNKN"
-    domain = module_domain.upper() if module_domain and module_domain != "unknown" else ""
+    domain = module_domain.upper() if module_domain and module_domain not in ("unknown", "misc", "") else ""
 
     parts = [opcode, entity['id']]
 
@@ -136,7 +143,7 @@ def _build_ir_json(entity: dict, level: str, name_token: str,
         base["bases"] = bases
         if module_category:
             base["category"] = module_category
-        if module_domain and module_domain != "unknown":
+        if module_domain and module_domain not in ("unknown", "misc", ""):
             base["domain"] = module_domain
     elif level == "Index":
         base["pattern_id"] = pattern_id

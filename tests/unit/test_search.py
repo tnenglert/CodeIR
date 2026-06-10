@@ -13,12 +13,12 @@ from index.search import (
     search_entities,
     grep_entities,
 )
-from index.store.db import connect, ensure_store
+from index.db.db import connect, ensure_store
 
 
 def _make_test_store(tmp_path):
     """Create a fully initialized .codeir store with test data."""
-    schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "store" / "schema.json"
+    schema_path = Path(__file__).resolve().parent.parent.parent / "index" / "db" / "schema.json"
     store_paths = ensure_store(repo_path=tmp_path, schema_path=schema_path)
     return store_paths
 
@@ -59,9 +59,9 @@ def _populate_modules(conn, modules):
     """Insert module classifications."""
     for m in modules:
         conn.execute(
-            "INSERT OR REPLACE INTO modules (file_path, category, content_hash, entity_count, indexed_at) "
-            "VALUES (?, ?, ?, ?, '2024-01-01')",
-            (m["file_path"], m["category"], "hash", m.get("entity_count", 1)),
+            "INSERT OR REPLACE INTO modules (file_path, category, domain, content_hash, entity_count, indexed_at) "
+            "VALUES (?, ?, ?, ?, ?, '2024-01-01')",
+            (m["file_path"], m["category"], m.get("domain", "unknown"), "hash", m.get("entity_count", 1)),
         )
     conn.commit()
 

@@ -1,10 +1,14 @@
 """Tests for caller resolution logic."""
 
+import sqlite3
+from pathlib import Path
+
 import pytest
 
 from index.callers import (
     FUZZY_MATCH_LIMIT,
     _matching_entities,
+    build_callers_table,
     resolve_calls_for_entity,
 )
 
@@ -304,3 +308,54 @@ class TestResolveCallsPriority:
         assert len(rels) == 1
         assert rels[0]["resolution"] == "import"
         assert rels[0]["entity_id"] == "IMPORT_T"
+
+
+def test_build_callers_table_reuses_cached_import_map(monkeypatch, tmp_path: Path):
+    repo_path = tmp_path
+    rust_file = repo_path / "mod.rs"
+    rust_file.write_text("fn helper() {}\n", encoding="utf-8")
+    db_path = repo_path / "entities.db"
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT, qualified_name TEXT, file_path TEXT, calls_json TEXT)")
+    conn.execute("CREATE TABLE file_metadata (file_path TEXT PRIMARY KEY, content_hash TEXT NOT NULL)")
+    conn.execute(
+        "CREATE TABLE caller_import_cache (file_path TEXT PRIMARY KEY, content_hash TEXT NOT NULL, import_map_json TEXT NOT NULL, updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE callers (entity_id TEXT NOT NULL, caller_id TEXT NOT NULL, caller_name TEXT NOT NULL, caller_file TEXT NOT NULL, resolution TEXT NOT NULL, PRIMARY KEY(entity_id, caller_id))"
+    )
+    conn.execute(
+        "INSERT INTO entities VALUES (?, ?, ?, ?, ?)",
+        ("CALLER", "run", "mod.run", "mod.rs", '["Imported"]'),
+    )
+    conn.execute(
+        "INSERT INTO entities VALUES (?, ?, ?, ?, ?)",
+        ("TARGET", "Imported", "pkg.Imported", "other.rs", "[]"),
+    )
+    conn.execute("INSERT INTO file_metadata VALUES (?, ?)", ("mod.rs", "hash1"))
+    conn.commit()
+    conn.close()
+
+    parse_calls = {"count": 0}
+
+    class _Frontend:
+        name = "python"
+        stoplist = set()
+
+        def parse_ast(self, file_path):
+            parse_calls["count"] += 1
+            return object()
+
+        def build_import_map(self, tree, file_path, repo_path):
+            return {"Imported": "pkg.Imported"}
+
+    monkeypatch.setattr("index.callers.get_frontend_for_file", lambda path: _Frontend())
+
+    first_count, _ = build_callers_table(repo_path, db_path)
+    assert first_count == 1
+    assert parse_calls["count"] == 1
+
+    second_count, _ = build_callers_table(repo_path, db_path)
+    assert second_count == 1
+    assert parse_calls["count"] == 1

@@ -9,13 +9,22 @@ Pipeline:
 
 from __future__ import annotations
 
+import ast
 import json
 import sqlite3
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ir.abbreviations import build_abbreviation_maps
+from ir.classifier import (
+    DomainDecision,
+    classify_domain_decision,
+    extract_full_import_paths,
+    infer_entity_domain_scores,
+    propagate_domains,
+)
 from ir.compressor import build_ir_rows
 from ir.stable_ids import make_entity_base_id
 from ir.token_count import count_tokens
@@ -27,7 +36,7 @@ from index.locator import (
 )
 from index.callers import build_callers_table
 from index.mapping import load_abbreviation_maps, save_abbreviation_maps
-from index.store.db import connect, ensure_store
+from index.db.db import connect, ensure_store
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +69,19 @@ def resolve_compression_level(config: Dict[str, Any]) -> str:
     if raw_mode:
         return map_legacy_mode_to_level(raw_mode)
     return "Behavior"
+
+
+ProgressCallback = Callable[[str, Dict[str, Any]], None]
+
+
+def _progress_callback(config: Dict[str, Any]) -> Optional[ProgressCallback]:
+    progress = config.get("_progress")
+    return progress if callable(progress) else None
+
+
+def _emit_progress(progress: Optional[ProgressCallback], phase: str, **stats: Any) -> None:
+    if progress:
+        progress(phase, stats)
 
 
 def _primary_language(source_languages: List[str]) -> str:
@@ -168,6 +190,7 @@ def _detect_changes(
 def _persist_modules(
     conn: sqlite3.Connection,
     classifications: Dict[str, str],
+    domains: Dict[str, str],
     file_hashes: Dict[str, str],
     entity_counts: Dict[str, int],
     file_deps: Optional[Dict[str, str]] = None,
@@ -177,14 +200,21 @@ def _persist_modules(
     file_deps = file_deps or {}
     for rel_path, category in classifications.items():
         conn.execute(
-            "INSERT INTO modules (file_path, category, content_hash, entity_count, deps_internal, indexed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO modules (file_path, category, domain, content_hash, entity_count, deps_internal, indexed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(file_path) DO UPDATE SET "
-            "category=excluded.category, content_hash=excluded.content_hash, "
+            "category=excluded.category, domain=excluded.domain, content_hash=excluded.content_hash, "
             "entity_count=excluded.entity_count, deps_internal=excluded.deps_internal, "
             "indexed_at=excluded.indexed_at",
-            (rel_path, category, file_hashes.get(rel_path, ""),
-             entity_counts.get(rel_path, 0), file_deps.get(rel_path, ""), now),
+            (
+                rel_path,
+                category,
+                domains.get(rel_path, "unknown"),
+                file_hashes.get(rel_path, ""),
+                entity_counts.get(rel_path, 0),
+                file_deps.get(rel_path, ""),
+                now,
+            ),
         )
     conn.commit()
 
@@ -252,6 +282,16 @@ def _upsert_index_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+def _upsert_index_meta_by_path(db_path: Path, updates: Dict[str, str]) -> None:
+    """Persist one or more index_meta values using a short-lived connection."""
+    conn = connect(db_path)
+    try:
+        for key, value in updates.items():
+            _upsert_index_meta(conn, key, value)
+    finally:
+        conn.close()
+
+
 def _remove_stale_entities(conn: sqlite3.Connection, current_rel_paths: set[str]) -> None:
     """Remove entities and modules for files that no longer exist in the repo."""
     stored_paths = {row[0] for row in conn.execute("SELECT DISTINCT file_path FROM entities").fetchall()}
@@ -299,20 +339,168 @@ def _classify_complexity(entity: dict, source_tokens: int) -> str:
     return "complex"
 
 
+_WEAK_DOMAIN_SOURCES = {"category_hint", "name_signal", "propagation"}
+_STRONG_DOMAIN_SOURCES = {"filename", "directory", "strong_import", "self_package", "frontend"}
+
+
+def _fallback_domain_decision(domain: str) -> DomainDecision:
+    if domain == "unknown":
+        return DomainDecision(domain=domain, source="frontend", strength="unresolved")
+    if domain == "misc":
+        return DomainDecision(domain=domain, source="frontend", strength="unresolved")
+    return DomainDecision(domain=domain, source="frontend", strength="strong")
+
+
+def _entity_rollup_votes(entities: List[dict]) -> Dict[str, Dict[str, int]]:
+    votes_by_file: Dict[str, Counter[str]] = defaultdict(Counter)
+    for entity in entities:
+        file_path = str(entity.get("file_path", ""))
+        if not file_path:
+            continue
+        semantic = entity.get("semantic") or {}
+        call_names = [call for call in semantic.get("calls", []) if isinstance(call, str)]
+        scores = infer_entity_domain_scores(
+            entity_name=str(entity.get("name", "")),
+            qualified_name=str(entity.get("qualified_name", "")),
+            call_names=call_names,
+        )
+        if not scores:
+            continue
+        best_domain, best_score = max(scores.items(), key=lambda item: item[1])
+        runner_up = max((score for domain, score in scores.items() if domain != best_domain), default=0)
+        if best_score >= 1 and best_score > runner_up:
+            votes_by_file[file_path][best_domain] += 1
+    return {file_path: dict(counter) for file_path, counter in votes_by_file.items()}
+
+
+def _choose_rollup_domain(votes: Dict[str, int]) -> Optional[Tuple[str, int, int]]:
+    if not votes:
+        return None
+    ordered = sorted(votes.items(), key=lambda item: (-item[1], item[0]))
+    best_domain, best_votes = ordered[0]
+    runner_up = ordered[1][1] if len(ordered) > 1 else 0
+    min_votes = 3 if best_domain == "fs" else 2
+    if best_votes < min_votes:
+        return None
+    if best_domain == "fs":
+        if runner_up == 0:
+            return best_domain, best_votes, runner_up
+        if best_votes >= runner_up + 3:
+            return best_domain, best_votes, runner_up
+        return None
+    if runner_up == 0:
+        return best_domain, best_votes, runner_up
+    if best_votes >= runner_up + 2:
+        return best_domain, best_votes, runner_up
+    return None
+
+
+def _refine_module_domains_from_entities(
+    file_domains: Dict[str, str],
+    file_domain_decisions: Dict[str, DomainDecision],
+    full_entities: List[dict],
+) -> Dict[str, Any]:
+    votes_by_file = _entity_rollup_votes(full_entities)
+    summary = {
+        "eligible_modules": 0,
+        "modules_with_votes": 0,
+        "upgraded_misc": 0,
+        "retagged_weak": 0,
+        "confirmed_weak": 0,
+        "strong_disagreements": 0,
+        "log_entries": 0,
+    }
+    log: List[Dict[str, Any]] = []
+
+    for file_path, decision in file_domain_decisions.items():
+        votes = votes_by_file.get(file_path, {})
+        chosen = _choose_rollup_domain(votes)
+        if votes:
+            summary["modules_with_votes"] += 1
+        if not chosen:
+            continue
+        candidate_domain, candidate_votes, runner_up = chosen
+        entry = {
+            "file_path": file_path,
+            "current_domain": decision.domain,
+            "current_source": decision.source,
+            "current_strength": decision.strength,
+            "candidate_domain": candidate_domain,
+            "candidate_votes": candidate_votes,
+            "runner_up_votes": runner_up,
+            "votes": votes,
+            "action": "none",
+        }
+        if not decision.is_refinable:
+            if candidate_domain != decision.domain:
+                entry["action"] = "log_disagreement"
+                summary["strong_disagreements"] += 1
+                log.append(entry)
+            continue
+        summary["eligible_modules"] += 1
+        if decision.domain in {"misc", "unknown"}:
+            file_domains[file_path] = candidate_domain
+            file_domain_decisions[file_path] = DomainDecision(
+                domain=candidate_domain,
+                source="entity_rollup",
+                strength="confirmed",
+                scores=votes,
+            )
+            entry["action"] = "upgrade"
+            summary["upgraded_misc"] += 1
+            log.append(entry)
+            continue
+        if decision.source in _WEAK_DOMAIN_SOURCES:
+            if candidate_domain == decision.domain:
+                file_domain_decisions[file_path] = DomainDecision(
+                    domain=decision.domain,
+                    source=decision.source,
+                    strength="confirmed",
+                    scores=votes,
+                )
+                entry["action"] = "confirm"
+                summary["confirmed_weak"] += 1
+                log.append(entry)
+            elif candidate_votes >= 3 and runner_up == 0:
+                file_domains[file_path] = candidate_domain
+                file_domain_decisions[file_path] = DomainDecision(
+                    domain=candidate_domain,
+                    source="entity_rollup",
+                    strength="confirmed",
+                    scores=votes,
+                )
+                entry["action"] = "retag"
+                summary["retagged_weak"] += 1
+                log.append(entry)
+            continue
+
+    summary["log_entries"] = len(log)
+    return {"summary": summary, "log": log}
+
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
 def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
     """Run multi-pass index pipeline and return stats."""
-    schema_path = Path(__file__).resolve().parent / "store" / "schema.json"
+    schema_path = Path(__file__).resolve().parent / "db" / "schema.json"
     store_paths = ensure_store(repo_path=repo_path, schema_path=schema_path)
 
     resolved_repo = repo_path.resolve()
+    progress = _progress_callback(config)
     frontends, extensions = resolve_frontend_config(repo_path, config)
     compression_level = resolve_compression_level(config)
     compact_mode = bool(config.get("compact_mode", False))
     passthrough_threshold = int(config.get("passthrough_threshold", 12))
+    _emit_progress(
+        progress,
+        "setup",
+        languages=[frontend.name for frontend in frontends],
+        extensions=extensions,
+        compression_level=compression_level,
+        store_dir=str(store_paths["store_dir"]),
+    )
 
     # -----------------------------------------------------------------------
     # Pass 0: Discovery + incremental change detection
@@ -325,6 +513,18 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
 
     entities_conn = connect(store_paths["entities_db"])
     mapping_conn: Optional[sqlite3.Connection] = None
+    refinement: Dict[str, Any] = {
+        "summary": {
+            "eligible_modules": 0,
+            "modules_with_votes": 0,
+            "upgraded_misc": 0,
+            "retagged_weak": 0,
+            "confirmed_weak": 0,
+            "strong_disagreements": 0,
+            "log_entries": 0,
+        },
+        "log": [],
+    }
     try:
         changed_files, unchanged_files = _detect_changes(entities_conn, all_files, repo_path)
         source_languages = sorted({get_frontend_for_file(file_path).name for file_path in all_files})
@@ -354,10 +554,19 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         if level_changed:
             changed_files = list(all_files)
             unchanged_files = []
+        _emit_progress(
+            progress,
+            "discovery",
+            files_scanned=len(all_files),
+            files_changed=len(changed_files),
+            files_unchanged=len(unchanged_files),
+            level_changed=level_changed,
+        )
 
         if not changed_files:
             # Clean up stale entries even when no files changed
             _remove_stale_entities(entities_conn, all_rel_paths)
+            _emit_progress(progress, "complete", status="no_changes", files_scanned=len(all_files))
             return {
                 "status": "no_changes",
                 "store_dir": str(store_paths["store_dir"]),
@@ -374,11 +583,13 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         # -------------------------------------------------------------------
         file_classifications: Dict[str, str] = {}
         file_domains: Dict[str, str] = {}
+        file_domain_decisions: Dict[str, DomainDecision] = {}
         file_hashes: Dict[str, str] = {}
         file_sizes: Dict[str, int] = {}
         bare_entities: List[dict] = []
         changed_rel_paths: List[str] = []
         file_deps: Dict[str, str] = {}
+        file_imports: Dict[str, List[str]] = {}  # for domain propagation
         internal_roots_by_language = {
             frontend.name: frontend.discover_internal_roots(repo_path)
             for frontend in frontends
@@ -402,6 +613,11 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             if tree is None:
                 file_classifications[rel_path] = "core_logic"
                 file_domains[rel_path] = "unknown"
+                file_domain_decisions[rel_path] = DomainDecision(
+                    domain="unknown",
+                    source="parse_failure",
+                    strength="unresolved",
+                )
                 continue
 
             cached_trees[rel_path] = tree
@@ -409,9 +625,26 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             # Use relative path for classification to avoid matching parent directories
             # (e.g., repo stored in /project/tests/repos/ shouldn't classify all files as "tests")
             category = frontend.classify_file(Path(rel_path), tree)
-            domain = frontend.classify_domain(Path(rel_path), tree)
+            if frontend.name == "python" and isinstance(tree, ast.Module):
+                decision = classify_domain_decision(
+                    Path(rel_path),
+                    tree,
+                    category=category,
+                    internal_roots=internal_roots_by_language[frontend.name],
+                )
+            else:
+                decision = _fallback_domain_decision(
+                    frontend.classify_domain(
+                        Path(rel_path),
+                        tree,
+                        category=category,
+                        internal_roots=internal_roots_by_language[frontend.name],
+                    )
+                )
+            domain = decision.domain
             file_classifications[rel_path] = category
             file_domains[rel_path] = domain
+            file_domain_decisions[rel_path] = decision
 
             all_imports = frontend.extract_import_names(tree, file_path=file_path, repo_path=repo_path)
             internal_deps, _ = frontend.split_imports(
@@ -422,10 +655,21 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             )
             file_deps[rel_path] = ",".join(internal_deps)
 
+            # Collect full dotted import paths for domain propagation (Python only)
+            if frontend.name == "python" and isinstance(tree, ast.Module):
+                file_imports[rel_path] = extract_full_import_paths(tree)
+
             bare = frontend.parse_entities_from_file(file_path, include_semantic=False, tree=tree)
             for entity in bare:
                 entity["file_path"] = rel_path
             bare_entities.extend(bare)
+        _emit_progress(
+            progress,
+            "bare_parse",
+            files_changed=len(changed_files),
+            files_parsed=len(cached_trees),
+            bare_entities=len(bare_entities),
+        )
 
         # Remove old entities for changed files before re-inserting
         _remove_changed_file_entities(entities_conn, changed_rel_paths)
@@ -437,8 +681,22 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             fp = str(entity["file_path"])
             entity_counts[fp] = entity_counts.get(fp, 0) + 1
 
-        _persist_modules(entities_conn, file_classifications, file_hashes, entity_counts, file_deps)
+        # Domain propagation: resolve unknown domains via internal import graph
+        if file_imports:
+            previous_domains = dict(file_domains)
+            propagate_domains(file_domains, file_imports, list(all_rel_paths))
+            for rel_path, domain in file_domains.items():
+                if previous_domains.get(rel_path) != domain:
+                    file_domain_decisions[rel_path] = DomainDecision(
+                        domain=domain,
+                        source="propagation",
+                        strength="weak",
+                    )
+            _emit_progress(progress, "domain_propagation", files_with_imports=len(file_imports))
+
+        _persist_modules(entities_conn, file_classifications, file_domains, file_hashes, entity_counts, file_deps)
         _persist_file_metadata(entities_conn, file_hashes, file_sizes)
+        _emit_progress(progress, "module_persist", modules=len(file_classifications))
 
         # -------------------------------------------------------------------
         # Pass 2: Global abbreviation maps
@@ -464,8 +722,15 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
                 entity["file_path"] = rel_path
             full_entities.extend(parsed)
         del cached_trees  # free memory after Pass 3
+        _emit_progress(progress, "semantic_parse", entities=len(full_entities))
 
         _assign_entity_ids(full_entities, existing_ids_by_base=existing_ids_by_base)
+        refinement = _refine_module_domains_from_entities(
+            file_domains=file_domains,
+            file_domain_decisions=file_domain_decisions,
+            full_entities=full_entities,
+        )
+        _persist_modules(entities_conn, file_classifications, file_domains, file_hashes, entity_counts, file_deps)
 
         # Build abbreviation maps with call symbols (available after full parse)
         call_symbols = [
@@ -480,6 +745,13 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             call_symbols=call_symbols,
             existing_maps=existing_maps,
             compact_mode=compact_mode,
+        )
+        _emit_progress(
+            progress,
+            "abbreviations",
+            entity_names=len(all_entity_names),
+            file_paths=len(all_file_paths),
+            call_symbols=len(call_symbols),
         )
 
         # Generate IR rows
@@ -530,6 +802,14 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
 
         total_entities = entities_conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
         total_ir_rows = entities_conn.execute("SELECT COUNT(*) FROM ir_rows").fetchone()[0]
+        _emit_progress(
+            progress,
+            "ir_persist",
+            entities_indexed=len(full_entities),
+            total_entities=total_entities,
+            ir_rows=len(ir_rows),
+            total_ir_rows=total_ir_rows,
+        )
 
         stored_source_language = _primary_language(source_languages)
         _upsert_index_meta(entities_conn, "source_language", stored_source_language)
@@ -538,6 +818,16 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         _upsert_index_meta(entities_conn, "entities", str(total_entities))
         _upsert_index_meta(entities_conn, "ir_rows", str(total_ir_rows))
         _upsert_index_meta(entities_conn, "compression_level", compression_level)
+        _upsert_index_meta(
+            entities_conn,
+            "module_domain_refinement_summary",
+            json.dumps(refinement["summary"], sort_keys=True),
+        )
+        _upsert_index_meta(
+            entities_conn,
+            "module_domain_refinement_log",
+            json.dumps(refinement["log"][:50], sort_keys=True),
+        )
 
     finally:
         entities_conn.close()
@@ -545,7 +835,39 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
             mapping_conn.close()
 
     # Pass 4: Build reverse caller relationships (opens its own connection)
-    caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"])
+    caller_count = 0
+    ambiguous_calls: List[Dict[str, Any]] = []
+    callers_status = "fresh"
+    callers_error = ""
+    _emit_progress(progress, "caller_graph_start")
+    _upsert_index_meta_by_path(
+        store_paths["entities_db"],
+        {"callers_status": "building", "callers_error": ""},
+    )
+    try:
+        caller_count, ambiguous_calls = build_callers_table(repo_path, store_paths["entities_db"])
+        _emit_progress(
+            progress,
+            "caller_graph_done",
+            caller_relationships=caller_count,
+            ambiguous_calls=len(ambiguous_calls),
+        )
+        _upsert_index_meta_by_path(
+            store_paths["entities_db"],
+            {
+                "callers_status": "fresh",
+                "callers_error": "",
+                "callers_built_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    except Exception as exc:
+        callers_status = "stale"
+        callers_error = str(exc)
+        _emit_progress(progress, "caller_graph_stale", error=callers_error)
+        _upsert_index_meta_by_path(
+            store_paths["entities_db"],
+            {"callers_status": "stale", "callers_error": callers_error},
+        )
 
     # Save abbreviation maps (reopen mapping_conn since we closed it above)
     mapping_conn = connect(store_paths["mapping_db"])
@@ -553,6 +875,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         abbrev_count = save_abbreviation_maps(mapping_conn, abbrev_maps)
     finally:
         mapping_conn.close()
+    _emit_progress(progress, "complete", status="indexed", abbreviations=abbrev_count)
 
     return {
         "store_dir": str(store_paths["store_dir"]),
@@ -569,4 +892,7 @@ def index_repo(repo_path: Path, config: Dict[str, Any]) -> Dict[str, Any]:
         "compression_level": compression_level,
         "caller_relationships": caller_count,
         "ambiguous_calls": ambiguous_calls,
+        "callers_status": callers_status,
+        "callers_error": callers_error,
+        "module_domain_refinement": refinement["summary"],
     }

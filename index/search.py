@@ -10,7 +10,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from index.store.db import connect, column_names
+from index.db.db import connect, column_names
 
 
 def _normalize_grep_pattern(pattern: str) -> str:
@@ -115,14 +115,22 @@ def search_entities(query: str, repo_path: Path, limit: int = 50, category: Opti
 
 
 def _build_match_entry(
-    line_num: int, line_text: str, all_lines: List[str], context: int,
+    line_num: int,
+    line_text: str,
+    all_lines: List[str],
+    context: int,
+    *,
+    before_context: Optional[int] = None,
+    after_context: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Build a match dict, optionally including surrounding context lines."""
     entry: Dict[str, Any] = {"line": line_num, "text": line_text.rstrip()}
-    if context > 0:
+    before = context if before_context is None else before_context
+    after = context if after_context is None else after_context
+    if before > 0 or after > 0:
         total = len(all_lines)
-        before_start = max(0, line_num - 1 - context)
-        after_end = min(total, line_num + context)
+        before_start = max(0, line_num - 1 - before)
+        after_end = min(total, line_num + after)
         entry["context_before"] = [
             {"line": before_start + i + 1, "text": all_lines[before_start + i].rstrip()}
             for i in range(line_num - 1 - before_start)
@@ -141,7 +149,10 @@ def grep_entities(
     limit: int = 50,
     ignore_case: bool = False,
     context: int = 0,
+    before_context: Optional[int] = None,
+    after_context: Optional[int] = None,
     path_filter: Optional[Any] = None,
+    category: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Grep source files for a regex pattern and return matches with IR context.
 
@@ -167,13 +178,22 @@ def grep_entities(
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        join_clause = ""
+        category_clause = ""
+        params: List[Any] = [level]
+        if category:
+            join_clause = "JOIN modules AS m ON m.file_path = e.file_path"
+            category_clause = "WHERE m.category = ?"
+            params.append(category)
         entity_rows = conn.execute(
             "SELECT e.id, e.qualified_name, e.kind, e.file_path, e.start_line, e.end_line, "
             "r.ir_text, r.mode "
             "FROM entities AS e "
+            f"{join_clause} "
             "LEFT JOIN ir_rows AS r ON r.entity_id = e.id AND r.mode = ? "
+            f"{category_clause} "
             "ORDER BY e.file_path, e.start_line",
-            (level,),
+            params,
         ).fetchall()
     finally:
         conn.close()
@@ -271,7 +291,14 @@ def grep_entities(
                         "matches": [],
                     }
                     result_order.append(key)
-                match_entry = _build_match_entry(line_num, line_text, lines, context)
+                match_entry = _build_match_entry(
+                    line_num,
+                    line_text,
+                    lines,
+                    context,
+                    before_context=before_context,
+                    after_context=after_context,
+                )
                 results_by_key[key]["matches"].append(match_entry)
             else:
                 key = f"file:{rel_path}"
@@ -286,7 +313,14 @@ def grep_entities(
                         "matches": [],
                     }
                     result_order.append(key)
-                match_entry = _build_match_entry(line_num, line_text, lines, context)
+                match_entry = _build_match_entry(
+                    line_num,
+                    line_text,
+                    lines,
+                    context,
+                    before_context=before_context,
+                    after_context=after_context,
+                )
                 results_by_key[key]["matches"].append(match_entry)
 
     # Collect in insertion order (limit already enforced during scanning)

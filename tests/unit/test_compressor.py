@@ -25,13 +25,13 @@ class TestBuildBehavior:
     """Tests for Behavior IR format conformance."""
 
     def test_calls_limited_to_six(self):
-        """C= field contains at most 6 calls."""
+        """C= field contains at most 6 calls and shows the truncation count."""
         entity = {"kind": "function", "id": "TEST"}
         calls = ["a", "b", "c", "d", "e", "f", "g", "h"]  # 8 calls
 
         result = _build_behavior(entity, "test", calls, "", 0, [])
 
-        assert "C=a,b,c,d,e,f" in result
+        assert "C=a,b,c,d,e,f+2" in result
         assert "g" not in result
         assert "h" not in result
 
@@ -115,3 +115,12 @@ class TestBuildIndex:
 
         assert result == "FN UTIL #UTIL"
         assert "#UNKNOWN" not in result
+
+    def test_domain_omitted_when_misc(self):
+        """misc is retained in module stats but omitted from compressed IR tags."""
+        entity = {"kind": "function", "id": "UTIL"}
+
+        result = _build_index(entity, "P123456", "utils", "misc")
+
+        assert result == "FN UTIL #UTIL"
+        assert "#MISC" not in result

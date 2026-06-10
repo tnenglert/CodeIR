@@ -101,11 +101,12 @@ def _core_instructions() -> str:
 
         Output from `callers`, `impact`, and `scope` includes inline triage metadata:
         ```
-          CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
-          GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+          CMPT.02         Callers=47               →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+          GTMVLN.03       Callers=3    Res=fuzzy               core_logic/move.py     [method, ~25 lines]
         ```
 
-        - `[N callers]` — connectivity/importance
+        - `Callers=N` — connectivity/importance
+        - `Res=fuzzy` — caller edge is best-effort rather than exact
         - `→Pattern` — pattern membership (standard infrastructure)
         - `[kind, ~N lines]` — entity type and size
 
@@ -295,11 +296,12 @@ def _codex_instructions() -> str:
 
         Output from `callers`, `impact`, and `scope` includes inline triage metadata:
         ```
-          CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
-          GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+          CMPT.02         Callers=47               →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+          GTMVLN.03       Callers=3    Res=fuzzy               core_logic/move.py     [method, ~25 lines]
         ```
 
-        - `[N callers]` — connectivity/importance
+        - `Callers=N` — connectivity/importance
+        - `Res=fuzzy` — caller edge is best-effort rather than exact
         - `→Pattern` — pattern membership (standard infrastructure)
         - `[kind, ~N lines]` — entity type and size
 

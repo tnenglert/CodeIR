@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from index.languages import (
+    clear_caches,
     get_frontend,
     get_frontend_for_extensions,
     get_frontend_for_file,
@@ -26,15 +27,22 @@ def test_path_matches_extensions_supports_compound_suffixes() -> None:
     assert not path_matches_extensions(path, [".py"])
 
 
-def test_frontend_resolution_for_python_files() -> None:
+def test_frontend_resolution_for_python_files(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    file_path = pkg / "util.py"
+
     assert get_frontend("python").name == "python"
     assert get_frontend_for_file(Path("module.py")).name == "python"
     assert get_frontend_for_extensions([".py"]).name == "python"
+    assert get_frontend("python").module_scope(file_path) == ["pkg", "util"]
 
 
 def test_frontend_resolution_for_rust_files() -> None:
     assert get_frontend("rust").name == "rust"
     assert get_frontend_for_file(Path("lib.rs")).name == "rust"
+    assert get_frontend("rust").module_scope(Path("src/api/client.rs")) == ["api", "client"]
 
 
 def test_frontend_resolution_for_typescript_files() -> None:
@@ -43,6 +51,7 @@ def test_frontend_resolution_for_typescript_files() -> None:
     assert get_frontend_for_file(Path("component.tsx")).name == "typescript"
     assert get_frontend_for_file(Path("types.d.ts")).name == "typescript"
     assert get_frontend_for_extensions([".ts"]).name == "typescript"
+    assert get_frontend("typescript").module_scope(Path("src/web/app.d.ts")) == ["web", "app"]
 
 
 def test_mixed_extensions_resolve_to_multiple_frontends() -> None:
@@ -93,3 +102,10 @@ def test_discover_source_files_respects_hidden_dirs_and_compound_extensions(tmp_
 def test_unsupported_extension_raises() -> None:
     with pytest.raises(ValueError):
         get_frontend_for_file(Path("module.go"))
+
+
+def test_clear_caches_recreates_frontends() -> None:
+    first = get_frontend("python")
+    clear_caches()
+    second = get_frontend("python")
+    assert first is not second

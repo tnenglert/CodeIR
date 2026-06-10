@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from index.store.db import connect
+from index.db.db import connect
 from ir.compressor import kind_to_opcode
 
 
@@ -212,7 +212,7 @@ Batch expand is useful when tracing through a known call chain or examining all 
 ```
 codeir callers <entity_id>
 ```
-Results marked `~` are probable but not certain. Use `--resolution local` for same-file only.
+Fuzzy matches appear inline as `Res=fuzzy`. Use `--resolution local` for same-file only.
 
 **Impact** — reverse dependency analysis (BFS through callers):
 ```
@@ -230,12 +230,13 @@ Returns the entity's callers, callees, and sibling methods (same class). Use bef
 
 Output from `callers`, `impact`, and `scope` includes inline triage metadata:
 ```
-  CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
-  GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
-  TSTCCNTDBTCR    [0 callers]              tests/test_module.py   [method, ~40 lines]
+  CMPT.02         Callers=47   →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+  GTMVLN.03       Callers=3    Res=fuzzy   core_logic/move.py     [method, ~25 lines]
+  TSTCCNTDBTCR    Callers=0                tests/test_module.py   [method, ~40 lines]
 ```
 
-- `[N callers]` — how many entities call this one (connectivity/importance)
+- `Callers=N` — how many entities call this one (connectivity/importance)
+- `Res=fuzzy` — caller edge is best-effort rather than exact
 - `→Pattern` — pattern membership (e.g., `→ModelSQL` means standard infrastructure)
 - `[kind, ~N lines]` — entity type and size
 

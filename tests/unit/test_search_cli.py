@@ -11,6 +11,11 @@ if str(ROOT) not in sys.path:
 import cli
 
 
+class _DummyConn:
+    def close(self):
+        return None
+
+
 def test_cmd_search_suggests_removing_category_when_unfiltered_matches_exist(monkeypatch, capsys, tmp_path):
     calls = []
 
@@ -99,3 +104,46 @@ def test_cmd_search_without_category_keeps_original_empty_state(monkeypatch, cap
     assert len(calls) == 1
     assert calls[0]["category"] is None
     assert "No entities found. Try: codeir grep \"ReportAgent\" to search file contents." in out
+
+
+def test_cmd_search_prints_callers_count(monkeypatch, capsys, tmp_path):
+    codeir_dir = tmp_path / ".codeir"
+    codeir_dir.mkdir()
+    (codeir_dir / "entities.db").write_text("")
+
+    monkeypatch.setattr(
+        cli,
+        "search_entities",
+        lambda **kwargs: [
+            {
+                "entity_id": "RPT",
+                "qualified_name": "reporting.ReportAgent",
+                "file_path": "report_agent.py",
+                "line": 10,
+                "kind": "class",
+                "line_count": 120,
+            }
+        ],
+    )
+    monkeypatch.setattr(cli, "connect", lambda db_path: _DummyConn())
+    monkeypatch.setattr(
+        cli,
+        "get_entity_annotations",
+        lambda conn, entity_ids: {
+            "RPT": {"caller_count": 47, "pattern_base": None, "kind": "class", "line_count": 120},
+        },
+    )
+
+    args = Namespace(
+        query=["ReportAgent"],
+        repo_path=tmp_path,
+        limit=50,
+        category=None,
+        patterns=False,
+    )
+
+    cli.cmd_search(args)
+    out = capsys.readouterr().out
+
+    assert "Callers=47" in out
+    assert "reporting.ReportAgent" in out

@@ -159,7 +159,7 @@ def _ensure_ir_rows_composite_pk(conn: sqlite3.Connection) -> None:
 def _ensure_modules_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS modules ("
-        "file_path TEXT PRIMARY KEY, category TEXT NOT NULL, "
+        "file_path TEXT PRIMARY KEY, category TEXT NOT NULL, domain TEXT NOT NULL DEFAULT 'unknown', "
         "content_hash TEXT NOT NULL, entity_count INTEGER NOT NULL DEFAULT 0, "
         "indexed_at TEXT NOT NULL)"
     )
@@ -174,6 +174,16 @@ def _ensure_modules_deps_column(conn: sqlite3.Connection) -> None:
     cols = column_names(conn, "modules")
     if "deps_internal" not in cols:
         conn.execute("ALTER TABLE modules ADD COLUMN deps_internal TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+
+def _ensure_modules_domain_column(conn: sqlite3.Connection) -> None:
+    """Add domain column to modules table if missing."""
+    if not table_exists(conn, "modules"):
+        return
+    cols = column_names(conn, "modules")
+    if "domain" not in cols:
+        conn.execute("ALTER TABLE modules ADD COLUMN domain TEXT NOT NULL DEFAULT 'unknown'")
         conn.commit()
 
 
@@ -218,6 +228,20 @@ def _ensure_callers_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_caller_import_cache_table(conn: sqlite3.Connection) -> None:
+    """Create the persisted import-map cache used by caller rebuilds."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS caller_import_cache (
+            file_path TEXT PRIMARY KEY,
+            content_hash TEXT NOT NULL,
+            import_map_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_caller_import_cache_hash ON caller_import_cache(content_hash)")
+    conn.commit()
+
+
 # ---------------------------------------------------------------------------
 # Mapping DB migrations
 # ---------------------------------------------------------------------------
@@ -256,11 +280,13 @@ def ensure_store(repo_path: Path, schema_path: Path) -> Dict[str, Path]:
     _ensure_entities_migrations(entities_conn)
     _ensure_ir_rows_composite_pk(entities_conn)
     _ensure_modules_table(entities_conn)
+    _ensure_modules_domain_column(entities_conn)
     _ensure_modules_deps_column(entities_conn)
     _ensure_file_metadata_table(entities_conn)
     _ensure_index_meta_table(entities_conn)
     _ensure_calls_json_column(entities_conn)
     _ensure_callers_table(entities_conn)
+    _ensure_caller_import_cache_table(entities_conn)
     entities_conn.close()
 
     mapping_conn = connect(mapping_db)

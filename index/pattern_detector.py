@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Minimum group size to become a pattern
+# Arbitrary minimum tuned to surface only high-confidence structural patterns;
+# calibrate per repo if your inheritance/trait families are smaller or larger.
 MIN_PATTERN_SIZE = 30
 
 
@@ -164,7 +165,7 @@ def detect_patterns(db_path: Path, min_size: int = MIN_PATTERN_SIZE) -> List[Pat
     Returns:
         List of detected Pattern objects
     """
-    from index.store.db import connect as _connect
+    from index.db.db import connect as _connect
     conn = _connect(db_path)
     conn.row_factory = sqlite3.Row
 
@@ -290,7 +291,7 @@ def get_patterns(db_path: Path, category: Optional[str] = None,
     Returns:
         List of Pattern objects (empty if table doesn't exist)
     """
-    from index.store.db import connect as _connect
+    from index.db.db import connect as _connect
     conn = _connect(db_path, read_only=True)
     conn.row_factory = sqlite3.Row
 
@@ -387,7 +388,7 @@ def get_entity_pattern_details(db_path: Path, entity_id: str) -> Optional[Patter
     Returns:
         PatternDetails with pattern info and member deviations, or None if not in pattern
     """
-    from index.store.db import connect as _connect
+    from index.db.db import connect as _connect
     conn = _connect(db_path, read_only=True)
     conn.row_factory = sqlite3.Row
 

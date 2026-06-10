@@ -102,6 +102,13 @@ def get_frontend(name: str) -> LanguageFrontend:
 _SUFFIX_CACHE: Dict[str, LanguageFrontend] = {}
 
 
+def clear_caches() -> None:
+    """Reset language-registry caches for tests and long-lived sessions."""
+    _NORM_CACHE.clear()
+    _FRONTEND_CACHE.clear()
+    _SUFFIX_CACHE.clear()
+
+
 def get_frontend_for_file(file_path: Path) -> LanguageFrontend:
     suffix = file_path.suffix.lower()
     if suffix in _SUFFIX_CACHE:

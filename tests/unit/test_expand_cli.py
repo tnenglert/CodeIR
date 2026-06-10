@@ -33,6 +33,7 @@ def test_cmd_expand_numbered_output(monkeypatch, capsys, tmp_path):
     args = Namespace(
         entity_ids=["AAA"],
         repo_path=tmp_path,
+        limit=None,
         number=True,
     )
 
@@ -44,3 +45,38 @@ def test_cmd_expand_numbered_output(monkeypatch, capsys, tmp_path):
     assert "10: first()" in out
     assert "11: second()" in out
     assert "12: third()" in out
+
+
+def test_cmd_expand_limit_truncates_lines(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        cli,
+        "get_entity_location",
+        lambda repo_path, entity_id: {
+            "entity_id": "AAA",
+            "qualified_name": "pkg.alpha",
+            "kind": "function",
+            "file_path": "alpha.py",
+            "start_line": 10,
+            "end_line": 14,
+        } if entity_id == "AAA" else None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "extract_code_slice",
+        lambda repo_path, file_path, start_line, end_line: "first()\nsecond()\nthird()\nfourth()\n",
+    )
+
+    args = Namespace(
+        entity_ids=["AAA"],
+        repo_path=tmp_path,
+        limit=2,
+        number=False,
+    )
+
+    cli.cmd_expand(args)
+    out = capsys.readouterr().out
+
+    assert "first()" in out
+    assert "second()" in out
+    assert "third()" not in out
+    assert "...\n" in out

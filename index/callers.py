@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from index.languages import get_frontend_for_file
-from index.store.db import connect
+from index.db.db import connect
 
-# Max fuzzy matches before we consider the name too ambiguous
+# Arbitrary ambiguity cap tuned to keep fuzzy caller edges useful without
+# flooding the graph; calibrate per repo if names are more or less repetitive.
 FUZZY_MATCH_LIMIT = 4
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,50 @@ def build_name_maps(
         qualified_to_entity[(entity["language"], row[2])] = entity
 
     return name_to_entities, qualified_to_entity
+
+
+def _load_file_hashes(conn: sqlite3.Connection) -> Dict[str, str]:
+    return {
+        str(row[0]): str(row[1])
+        for row in conn.execute("SELECT file_path, content_hash FROM file_metadata").fetchall()
+    }
+
+
+def _load_cached_import_map(
+    conn: sqlite3.Connection,
+    file_path: str,
+    content_hash: str,
+) -> Dict[str, str] | None:
+    row = conn.execute(
+        "SELECT import_map_json FROM caller_import_cache WHERE file_path = ? AND content_hash = ?",
+        (file_path, content_hash),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _store_cached_import_map(
+    conn: sqlite3.Connection,
+    file_path: str,
+    content_hash: str,
+    import_map: Dict[str, str],
+) -> None:
+    conn.execute(
+        "INSERT INTO caller_import_cache (file_path, content_hash, import_map_json, updated_at) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(file_path) DO UPDATE SET "
+        "content_hash=excluded.content_hash, import_map_json=excluded.import_map_json, updated_at=excluded.updated_at",
+        (
+            file_path,
+            content_hash,
+            json.dumps(import_map, sort_keys=True),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
 
 
 def _matching_entities(
@@ -215,12 +261,13 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
         (relationship_count, ambiguous_calls) where ambiguous_calls contains
         unresolved calls that exceeded FUZZY_MATCH_LIMIT.
     """
-    from index.store.db import _ensure_callers_table
+    from index.db.db import _ensure_callers_table
 
     conn = connect(db_path)
 
     # 1. Build repo-wide name maps (also used for grouping by file)
     name_to_entities, qualified_to_entity = build_name_maps(conn)
+    file_hashes = _load_file_hashes(conn)
 
     # 2. Group all entities by file, reusing the qualified_name map (one entry per entity)
     entities_by_file: Dict[str, List[Dict]] = {}
@@ -249,11 +296,15 @@ def build_callers_table(repo_path: Path, db_path: Path) -> Tuple[int, List[Dict]
             continue
 
         frontend = get_frontend_for_file(abs_path)
-        tree = frontend.parse_ast(abs_path)
-        if tree is None:
-            continue
-
-        import_map = frontend.build_import_map(tree, abs_path, repo_path)
+        content_hash = file_hashes.get(file_path_str, "")
+        import_map = _load_cached_import_map(conn, file_path_str, content_hash) if content_hash else None
+        if import_map is None:
+            tree = frontend.parse_ast(abs_path)
+            if tree is None:
+                continue
+            import_map = frontend.build_import_map(tree, abs_path, repo_path)
+            if content_hash:
+                _store_cached_import_map(conn, file_path_str, content_hash, import_map)
 
         for entity in entities:
             calls = calls_by_id.get(entity["entity_id"], [])

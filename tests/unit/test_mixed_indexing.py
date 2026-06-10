@@ -11,8 +11,8 @@ pytest.importorskip("tree_sitter_rust")
 pytest.importorskip("tree_sitter_typescript")
 
 from index.indexer import index_repo
-from index.store.db import connect
-from index.store.stats import get_stats
+from index.db.db import connect
+from index.db.stats import get_stats
 
 
 def _entity_id_by_qualified_name(conn, qualified_name: str) -> str:
@@ -124,6 +124,9 @@ pub fn call_helper() -> i32 {
     meta = dict(conn.execute("SELECT key, value FROM index_meta").fetchall())
     assert meta["source_language"] == "mixed"
     assert json.loads(meta["source_languages"]) == ["python", "rust", "typescript"]
+    assert meta["callers_status"] == "fresh"
+    assert meta["callers_built_at"]
+    assert meta["callers_error"] == ""
 
     python_helper_id = _entity_id_by_qualified_name(conn, "pkg.util.helper")
     python_caller_id = _entity_id_by_qualified_name(conn, "pkg.util.call_helper")
@@ -153,3 +156,6 @@ pub fn call_helper() -> i32 {
     stats = get_stats(tmp_path)
     assert stats["source_language"] == "mixed"
     assert stats["source_languages"] == ["python", "rust", "typescript"]
+    cq = stats["classification_quality"]
+    assert cq["structural_files"] + cq["fallback_files"] == 6
+    assert cq["specific_domains"] + cq["misc_domains"] + cq["unknown_domains"] == 6

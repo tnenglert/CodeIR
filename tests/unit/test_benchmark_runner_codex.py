@@ -6,8 +6,13 @@ import sys
 from pathlib import Path
 
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tests" / "_local" / "PromptBenchmarksAutorun" / "benchmark_runner.py"
+
+if not MODULE_PATH.exists():
+    pytest.skip("benchmark_runner.py not found (local eval artifact)", allow_module_level=True)
 
 spec = importlib.util.spec_from_file_location("benchmark_runner", MODULE_PATH)
 benchmark_runner = importlib.util.module_from_spec(spec)

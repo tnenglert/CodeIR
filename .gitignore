@@ -31,6 +31,14 @@ pytest.ini
 /.claude/
 /tests/_local/
 /_fastapi-users-master/
+/markdown/
+
+# Eval/benchmark run outputs — never tracked (task packs, suites, scorers are)
+/tests/eval/*.responses.json
+/tests/eval/*.txt
+/tests/eval/bearings_ab_claude_baseline_v2.json
+/tests/eval/bearings_ab_claude_refreshed_v2.json
+/tests/eval/bearings_ab_claude_run.json
 
 # Temp files
 ~$*

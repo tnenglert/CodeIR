@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 from index.locator import extract_code_slice
 from index.search import search_entities as _search_entities
-from index.store.fetch import get_entity_location, get_entity_with_ir
+from index.db.fetch import get_entity_location, get_entity_with_ir
 
 
 def _repo_path(repo_path: str | Path = ".") -> Path:

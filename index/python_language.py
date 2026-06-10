@@ -47,9 +47,7 @@ class _EntityVisitor(ast.NodeVisitor):
             if isinstance(current, ast.Name) and current.id not in {"self", "cls"}:
                 parts.append(current.id)
             parts.reverse()
-            if len(parts) >= 2:
-                return ".".join(parts[-2:])
-            return parts[0] if parts else ""
+            return ".".join(parts) if parts else ""
         return ""
 
     def _symbol_name(self, node: ast.AST) -> str:
@@ -206,7 +204,7 @@ class PythonFrontend:
         if tree is None:
             return []
         visitor = _EntityVisitor(
-            module_scope=_python_module_scope(file_path),
+            module_scope=self.module_scope(file_path),
             include_semantic=include_semantic,
         )
         visitor.visit(tree)
@@ -233,11 +231,45 @@ class PythonFrontend:
         return sorted(set(names))
 
     def discover_internal_roots(self, repo_path: Path) -> set[str]:
+        """Discover importable top-level package names in the repo.
+
+        Recognizes three Python project layouts:
+        1. Flat: repo/pkg/__init__.py → 'pkg'
+        2. src-layout: repo/src/pkg/__init__.py → 'pkg'
+        3. Nested project: repo/project/pkg/__init__.py where project/
+           contains setup.py, setup.cfg, or pyproject.toml → 'pkg'
+        """
         roots: set[str] = set()
+        packaging_markers = {"setup.py", "setup.cfg", "pyproject.toml"}
+
         for child in repo_path.iterdir():
-            if child.is_dir() and (child / "__init__.py").exists():
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+
+            # Rule 1: flat layout — repo/pkg/__init__.py
+            if (child / "__init__.py").exists():
                 roots.add(child.name)
+                continue
+
+            # Rule 2: src-layout — repo/src/pkg/__init__.py
+            if child.name == "src":
+                for grandchild in child.iterdir():
+                    if grandchild.is_dir() and (grandchild / "__init__.py").exists():
+                        roots.add(grandchild.name)
+                continue
+
+            # Rule 3: nested project — repo/project/pkg/__init__.py
+            # where project/ looks like a packaging container
+            has_packaging = any((child / m).exists() for m in packaging_markers)
+            if has_packaging:
+                for grandchild in child.iterdir():
+                    if grandchild.is_dir() and (grandchild / "__init__.py").exists():
+                        roots.add(grandchild.name)
+
         return roots
+
+    def module_scope(self, file_path: Path, repo_path: Optional[Path] = None) -> List[str]:
+        return _python_module_scope(file_path)
 
     def split_imports(
         self,
@@ -252,8 +284,20 @@ class PythonFrontend:
     def classify_file(self, file_path: Path, tree: ast.Module) -> str:
         return classify_python_file(file_path, tree)
 
-    def classify_domain(self, file_path: Path, tree: ast.Module) -> str:
-        return classify_python_domain(file_path, tree)
+    def classify_domain(
+        self,
+        file_path: Path,
+        tree: ast.Module,
+        *,
+        category: Optional[str] = None,
+        internal_roots: Optional[set[str]] = None,
+    ) -> str:
+        return classify_python_domain(
+            file_path,
+            tree,
+            category=category,
+            internal_roots=internal_roots,
+        )
 
     def build_import_map(self, tree: ast.Module, file_path: Path, repo_path: Path) -> Dict[str, str]:
         import_map: Dict[str, str] = {}

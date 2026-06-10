@@ -788,7 +788,7 @@ class TypeScriptFrontend:
         if parsed is None:
             return []
         extractor = _TypeScriptExtractor(
-            module_scope=_module_scope_from_path(file_path),
+            module_scope=self.module_scope(file_path),
             include_semantic=include_semantic,
         )
         return extractor.extract(parsed)
@@ -839,6 +839,9 @@ class TypeScriptFrontend:
         roots.discard("")
         return roots
 
+    def module_scope(self, file_path: Path, repo_path: Optional[Path] = None) -> List[str]:
+        return _module_scope_from_path(file_path, repo_path)
+
     def split_imports(
         self,
         all_imports: Sequence[str],
@@ -853,7 +856,14 @@ class TypeScriptFrontend:
     def classify_file(self, file_path: Path, tree: ParsedTypeScriptFile) -> str:
         return _classify_file(file_path, tree)
 
-    def classify_domain(self, file_path: Path, tree: ParsedTypeScriptFile) -> str:
+    def classify_domain(
+        self,
+        file_path: Path,
+        tree: ParsedTypeScriptFile,
+        *,
+        category: Optional[str] = None,
+        internal_roots: Optional[set[str]] = None,
+    ) -> str:
         return _classify_domain(file_path, tree)
 
     def build_import_map(self, tree: ParsedTypeScriptFile, file_path: Path, repo_path: Path) -> Dict[str, str]:

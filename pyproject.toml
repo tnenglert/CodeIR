@@ -52,11 +52,11 @@ test = [
 codeir = "cli:main"
 
 [tool.setuptools]
-packages = ["ir", "index", "index.store", "tools"]
+packages = ["ir", "index", "index.db", "tools"]
 py-modules = ["cli"]
 
 [tool.setuptools.package-data]
-"index.store" = ["schema.json"]
+"index.db" = ["schema.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

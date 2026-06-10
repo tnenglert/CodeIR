@@ -19,6 +19,7 @@ Commands:
   rules        — Generate .claude/rules/CodeIR.md agent instructions with repo-specific examples
   eval         — Evaluate compression levels side-by-side
   floor-test   — Comprehensibility floor testing (generate/score)
+  benchmark    — One-shot report: coverage, taxonomy, compression, worked example
 """
 
 from __future__ import annotations
@@ -26,15 +27,16 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any, Dict
 
 from index.indexer import index_repo, map_legacy_mode_to_level
 from index.locator import extract_code_slice
 from index.search import compute_impact, compute_scope, grep_entities, search_entities
-from index.store.db import column_names, connect
-from index.store.fetch import get_entities_by_pattern, get_entity_all_levels, get_entity_location, get_entity_with_ir
-from index.store.stats import get_stats
+from index.db.db import column_names, connect
+from index.db.fetch import get_entities_by_pattern, get_entity_all_levels, get_entity_location, get_entity_with_ir
+from index.db.stats import get_stats
 
 
 # Pattern feature toggle - set to False for vanilla CodeIR testing
@@ -114,13 +116,14 @@ def format_annotated_entity(
     file_path: str,
     annotations: Dict[str, Dict],
     marker: str = " ",
+    resolution: Optional[str] = None,
     show_ir: bool = False,
     ir_text: str = "",
 ) -> str:
     """Format an entity line with inline annotations.
 
     Output format:
-      {marker}{entity_id:20s}  [{N} callers] {→Pattern}  {file_path}  [{kind}, ~{lines} lines]
+      {marker}{entity_id:20s}  Callers={N} {Res=fuzzy} {→Pattern}  {file_path}  [{kind}, ~{lines} lines]
     """
     ann = annotations.get(entity_id, {})
     caller_count = ann.get("caller_count", 0)
@@ -129,19 +132,52 @@ def format_annotated_entity(
     line_count = ann.get("line_count", 0)
 
     # Format caller count
-    caller_str = f"[{caller_count} callers]" if caller_count > 0 else "[0 callers]"
+    caller_str = f"Callers={caller_count}"
 
     # Format pattern (if any)
     pattern_str = f"→{pattern_base}" if pattern_base else ""
+    resolution_str = "Res=fuzzy" if resolution == "fuzzy" else ""
 
     # Format kind and lines
     kind_str = f"[{kind}, ~{line_count} lines]"
 
     # Build the line with aligned columns
-    # Entity ID (20), caller count (12), pattern (12), file path (variable), kind/lines
-    line = f"{marker}{entity_id:20s}  {caller_str:12s} {pattern_str:12s}  {file_path:40s}  {kind_str}"
+    # Entity ID (20), caller count (12), resolution (11), pattern (12), file path (variable), kind/lines
+    line = (
+        f"{marker}{entity_id:20s}  {caller_str:12s} {resolution_str:11s} "
+        f"{pattern_str:12s}  {file_path:40s}  {kind_str}"
+    )
 
     return line
+
+
+def _get_index_meta_value(conn: sqlite3.Connection, key: str) -> Optional[str]:
+    """Best-effort lookup for index metadata used by CLI warnings."""
+    try:
+        row = conn.execute("SELECT value FROM index_meta WHERE key = ?", (key,)).fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    if isinstance(row, sqlite3.Row):
+        return row["value"]
+    return row[0]
+
+
+def _warn_if_callers_stale(conn: sqlite3.Connection) -> None:
+    """Print a warning if the caller graph is known to be stale."""
+    status = _get_index_meta_value(conn, "callers_status")
+    if status != "stale":
+        return
+
+    built_at = _get_index_meta_value(conn, "callers_built_at")
+    callers_error = _get_index_meta_value(conn, "callers_error")
+    print("Warning: caller graph may be stale; re-run `codeir index` for fresh callers/impact/scope data.")
+    if built_at:
+        print(f"  Last successful caller rebuild: {built_at}")
+    if callers_error:
+        print(f"  Last caller rebuild error: {callers_error}")
+    print()
 
 
 def _entity_sort_key(entity_id: str, file_path: str, annotations: Dict[str, Dict]) -> tuple:
@@ -214,8 +250,7 @@ def smart_truncate_entities(
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir"],
-    "extensions": [".py"],
+    "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".codeir", "node_modules", "dist", "build", "target"],
     "compression_level": "Behavior+Index",
 }
 
@@ -230,6 +265,37 @@ def load_config(repo_path: Path) -> Dict[str, Any]:
         if isinstance(user_cfg, dict):
             cfg.update(user_cfg)
     return cfg
+
+
+def _format_progress_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, (list, tuple, set)):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _make_index_progress_reporter():
+    started = time.monotonic()
+    last = started
+
+    def report(phase: str, stats: Dict[str, Any]) -> None:
+        nonlocal last
+        now = time.monotonic()
+        elapsed = now - started
+        delta = now - last
+        last = now
+        detail = ", ".join(
+            f"{key}={_format_progress_value(value)}"
+            for key, value in stats.items()
+            if value not in (None, "")
+        )
+        suffix = f": {detail}" if detail else ""
+        print(f"  [{elapsed:6.1f}s +{delta:5.1f}s] {phase}{suffix}", flush=True)
+
+    return report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -277,6 +343,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_expand.add_argument("entity_ids", nargs="+", metavar="ENTITY_ID",
                           help="One or more entity IDs, or STEM.* for all siblings")
     p_expand.add_argument("--repo-path", type=Path, default=Path("."))
+    p_expand.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max source lines to show per entity",
+    )
     p_expand.add_argument(
         "--number",
         action="store_true",
@@ -347,17 +419,26 @@ def build_parser() -> argparse.ArgumentParser:
     # grep
     p_grep = sub.add_parser("grep", help="Grep source files with IR context")
     p_grep.add_argument("pattern", help="Regex pattern to search for")
+    p_grep.add_argument(
+        "path_positional",
+        nargs="*",
+        metavar="PATH",
+        help="Optional path scope(s), equivalent to repeating --path",
+    )
     p_grep.add_argument("--repo-path", type=Path, default=Path("."))
     p_grep.add_argument("--level", default="Behavior", help="IR level to attach (default: Behavior)")
     p_grep.add_argument("--limit", type=int, default=50, help="Max result groups (default: 50)")
     p_grep.add_argument("-i", "--ignore-case", action="store_true", help="Case-insensitive matching")
     p_grep.add_argument("-C", "--context", type=int, default=0, help="Show N surrounding lines per match (like grep -C)")
+    p_grep.add_argument("-A", "--after-context", type=int, default=None, help="Show N trailing lines of context after each match")
+    p_grep.add_argument("-B", "--before-context", type=int, default=None, help="Show N leading lines of context before each match")
     p_grep.add_argument(
         "--path",
         action="append",
         default=None,
         help="Scope to directory or glob (repeatable, e.g., --path orm/ --path tests/)",
     )
+    p_grep.add_argument("--category", default=None, help="Filter to files in a module category (e.g., core_logic, tests)")
     p_grep.add_argument("-v", "--verbose", action="store_true", help="Include IR context for each entity match")
     p_grep.add_argument(
         "--count",
@@ -389,6 +470,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval.add_argument("--levels", nargs="+", default=["Behavior", "Index"])
     p_eval.add_argument("--modes", default=None, help="Legacy modes: comma-separated a,b,hybrid")
     p_eval.add_argument("--output", type=Path, default=None)
+
+    # benchmark
+    p_benchmark = sub.add_parser(
+        "benchmark",
+        help="Run benchmark report: coverage, taxonomy, compression, worked example",
+    )
+    p_benchmark.add_argument(
+        "repo_path", type=Path, nargs="?", default=None,
+        help="Repository path (default: current directory)",
+    )
 
     # floor-test
     p_floor = sub.add_parser("floor-test", help="Comprehensibility floor testing")
@@ -488,6 +579,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         cfg = load_config(repo_path)
         if args.level:
             cfg["compression_level"] = args.level
+        cfg["_progress"] = _make_index_progress_reporter()
 
         print(f"Indexing {repo_path} ...")
         result = index_repo(repo_path, cfg)
@@ -498,6 +590,7 @@ def cmd_init(args: argparse.Namespace) -> None:
                   f"{result.get('files_changed', 0)} files changed")
 
     # 2. Bearings
+    print("Generating bearings files ...", flush=True)
     db_path = repo_path / ".codeir" / "entities.db"
     if not db_path.exists():
         print("Error: No index found. Run without --skip-index first.")
@@ -506,10 +599,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            "SELECT file_path, category, entity_count, deps_internal "
-            "FROM modules ORDER BY category, file_path"
-        ).fetchall()
+        modules = _load_modules_for_bearings(conn)
         total = int(conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0])
     except sqlite3.OperationalError:
         print("Warning: could not generate bearings (no module data).")
@@ -517,11 +607,6 @@ def cmd_init(args: argparse.Namespace) -> None:
         return
     conn.close()
 
-    modules = [
-        {"file_path": r["file_path"], "category": r["category"],
-         "entity_count": r["entity_count"], "deps_internal": r["deps_internal"]}
-        for r in rows
-    ]
     module_ids = _compute_module_ids(modules)
 
     from ir.classifier import generate_context_file, generate_summary, generate_category_file
@@ -546,6 +631,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  Bearings: {len(modules)} modules, {total} entities")
 
     # 3. Platform instructions
+    print("Generating platform instructions ...", flush=True)
     if not platforms:
         # No repo/runtime platforms detected — default to Claude Code instructions
         from ir.init import ClaudeCode
@@ -575,6 +661,7 @@ def cmd_index(args: argparse.Namespace) -> None:
         cfg["compression_mode"] = args.mode
     if args.compact:
         cfg["compact_mode"] = True
+    cfg["_progress"] = _make_index_progress_reporter()
 
     result = index_repo(repo_path, cfg)
 
@@ -592,6 +679,22 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"  IR rows: {result.get('ir_rows', 0)} (total: {result.get('total_ir_rows', 0)})")
     print(f"  Abbreviations: {result.get('abbreviations', 0)}")
     print(f"  Caller links: {result.get('caller_relationships', 0)}")
+    if result.get("callers_status") == "stale":
+        print(f"  Callers status: stale ({result.get('callers_error', 'caller rebuild failed')})")
+    refinement = result.get("module_domain_refinement", {})
+    if refinement:
+        upgrades = refinement.get("upgraded_misc", 0)
+        retagged = refinement.get("retagged_weak", 0)
+        confirmed = refinement.get("confirmed_weak", 0)
+        disagreements = refinement.get("strong_disagreements", 0)
+        if upgrades or retagged or confirmed or disagreements:
+            print(
+                "  Module refinement: "
+                f"{upgrades} misc upgrades, "
+                f"{retagged} weak retags, "
+                f"{confirmed} weak confirmations, "
+                f"{disagreements} strong disagreements logged"
+            )
 
     # Show ambiguous calls summary
     ambiguous = result.get('ambiguous_calls', [])
@@ -607,6 +710,19 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     print(f"  Level: {result.get('compression_level', 'Behavior')}")
     print(f"  Store: {result.get('store_dir', '')}")
+
+    stats = get_stats(repo_path)
+    cq = stats.get("classification_quality", {})
+    if cq:
+        print(
+            f"  Classification: {cq.get('structural_percent', 0.0):.1f}% structural, "
+            f"{cq.get('fallback_percent', 0.0):.1f}% fallback"
+        )
+        print(
+            f"  Domains: {cq.get('specific_percent', 0.0):.1f}% specific, "
+            f"{cq.get('misc_percent', 0.0):.1f}% misc, "
+            f"{cq.get('unknown_percent', 0.0):.1f}% unknown"
+        )
 
     # Run pattern detection
     from index.pattern_detector import detect_patterns
@@ -704,13 +820,13 @@ codeir bearings --full             # full module map
 ```
 codeir search <query> [--category <category>]
 ```
-Multiple terms use OR logic with ranking. Use `--category` to filter (e.g., `--category core_logic` to skip tests).
+Multiple terms use OR logic with ranking. Use `--category` to filter (e.g., `--category core_logic` to skip tests). If a category-scoped search returns nothing, retry without `--category`.
 
 **Grep** — regex search across source files, grouped by entity:
 ```
-codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
+codeir grep <pattern> [path ...] [--path <dir_or_glob>] [--category <category>] [-i] [-C N] [-A N] [-B N] [-v]
 ```
-Use `--path` to scope (e.g., `--path orm/`). Use `-v` for full IR context per match.
+Use positional paths or `--path` to scope (e.g., `codeir grep "route|router" orm/ --path tests/`). Use `--category` to constrain grep to module categories. Use `-v` for full IR context per match.
 
 **Inspect** — view what an entity does without reading source:
 ```
@@ -721,13 +837,14 @@ Index = what it is. Behavior = what it does and calls. Default is Behavior.
 **Expand** — retrieve raw source when you need to edit or verify:
 ```
 codeir expand <entity_id>
+codeir expand <entity_id> --limit 20
 ```
 
 **Trace** — find what depends on an entity before changing it:
 ```
 codeir callers <entity_id>
 ```
-Results marked `~` are probable but not certain. Use `--resolution local` for same-file only.
+Fuzzy matches appear inline as `Res=fuzzy`. Use `--resolution local` for same-file only.
 
 **Impact** — reverse dependency analysis (BFS through callers):
 ```
@@ -744,7 +861,9 @@ Returns the entity's callers, callees, and sibling methods (same class). Use bef
 ### Reading compressed representations
 
 Behavior fields:
-- `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
+- `FN`/`AFN`/`MT`/`AMT` — function/async-fn, method/async-method (Python, TS)
+- `CLS`/`IFC`/`TYP`/`NS` — class, interface, type alias, namespace (Python, TS)
+- `ST`/`EN`/`TRT`/`TMT`/`CST` — struct, enum, trait, trait-method, constant (Rust, TS)
 - `C=` — calls made
 - `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
 - `A=` — assignment count
@@ -795,16 +914,20 @@ Use this first when the task is unfamiliar, cross-cutting, or architectural.
 ```
 codeir search <terms> [--category <cat>]
 ```
-After `bearings`, prefer `--category` to narrow to the most likely area.
+After `bearings`, prefer `--category` to narrow to the most likely area. If
+it returns nothing, remove the category filter and retry.
 
 **Grep** — regex search across source, grouped by entity:
 ```
-codeir grep <pattern> [--path <dir_or_glob>] [-i] [-C N] [-v]
-codeir grep <pattern> --evidence [--path <dir_or_glob>] [-i]
-codeir grep <pattern> --count [--path <dir_or_glob>]
+codeir grep <pattern> [path ...] [--path <dir_or_glob>] [--category <cat>] [-i] [-C N] [-A N] [-B N] [-v]
+codeir grep <pattern> --evidence [path ...] [--path <dir_or_glob>] [--category <cat>] [-i]
+codeir grep <pattern> --count [path ...] [--path <dir_or_glob>] [--category <cat>]
 ```
 Use `--evidence` instead of `rg -n ...` followed by `sed -n ...` when you
 want exact matching lines, nearby context, and the owning entity in one call.
+Use positional paths or repeated `--path` flags to scope grep. Use `--category`
+to constrain grep to a module category. Use `|` for alternation; `\\|` is also
+accepted for compatibility.
 
 **Inspect** — compact behavior snapshots:
 ```
@@ -814,6 +937,7 @@ codeir show <entity_id> [--level Index|Behavior]
 **Expand** — raw source when you need to edit or verify:
 ```
 codeir expand <entity_id>
+codeir expand <entity_id> --limit 20   # first 20 source lines per entity
 codeir expand <entity_id> --number     # with line numbers
 codeir expand <id1> <id2> <id3>        # multiple entities
 ```
@@ -846,7 +970,9 @@ to understand blast radius.
 ### Reading compressed representations
 
 Behavior fields:
-- `FN` / `CLS` / `MT` / `AMT` — function, class, method, async method
+- `FN`/`AFN`/`MT`/`AMT` — function/async-fn, method/async-method (Python, TS)
+- `CLS`/`IFC`/`TYP`/`NS` — class, interface, type alias, namespace (Python, TS)
+- `ST`/`EN`/`TRT`/`TMT`/`CST` — struct, enum, trait, trait-method, constant (Rust, TS)
 - `C=` — calls made
 - `F=` — flags: `R`=returns, `E`=raises, `I`=conditionals, `L`=loops, `T`=try/except, `W`=with
 - `A=` — assignment count
@@ -857,8 +983,8 @@ Behavior fields:
 
 Output from `callers`, `impact`, and `scope` includes inline triage metadata:
 ```
-  CMPT.02         [47 callers] →ModelSQL   core_logic/tax.py      [class, ~180 lines]
-  GTMVLN.03       [3 callers]              core_logic/move.py     [method, ~25 lines]
+  CMPT.02         Callers=47               →ModelSQL   core_logic/tax.py      [class, ~180 lines]
+  GTMVLN.03       Callers=3    Res=fuzzy               core_logic/move.py     [method, ~25 lines]
 ```
 
 Results are smart-sorted (high-caller core logic first, tests last) and
@@ -917,20 +1043,36 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(f"No entities found. Try: codeir grep \"{query_str}\" to search file contents.")
         return
 
+    db_path = repo_path / ".codeir" / "entities.db"
+    annotations: Dict[str, Dict[str, Any]] = {}
+    if db_path.exists():
+        conn = connect(db_path)
+        try:
+            annotations = get_entity_annotations(conn, [r["entity_id"] for r in results])
+        finally:
+            conn.close()
+
     # Load pattern memberships if requested and patterns are enabled
     show_patterns = getattr(args, "patterns", False) and PATTERNS_ENABLED
     if show_patterns:
         from index.pattern_detector import get_entity_pattern
-        db_path = repo_path / ".codeir" / "entities.db"
 
     for r in results:
         line_info = f", ~{r['line_count']} lines" if r.get('line_count') else ""
+        caller_count = annotations.get(r["entity_id"], {}).get("caller_count", 0)
+        caller_str = f"Callers={caller_count}"
         if show_patterns:
             pattern_id = get_entity_pattern(db_path, r['entity_id'])
             pattern_marker = f" →{pattern_id}" if pattern_id else ""
-            print(f"  {r['entity_id']:20s}{pattern_marker:15s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
+            print(
+                f"  {r['entity_id']:20s}{pattern_marker:15s}  {caller_str:11s}  "
+                f"{r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]"
+            )
         else:
-            print(f"  {r['entity_id']:20s}  {r['qualified_name']:40s}  {r['file_path']}:{r['line']}  [{r['kind']}{line_info}]")
+            print(
+                f"  {r['entity_id']:20s}  {caller_str:11s}  {r['qualified_name']:40s}  "
+                f"{r['file_path']}:{r['line']}  [{r['kind']}{line_info}]"
+            )
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -1060,17 +1202,29 @@ def cmd_expand(args: argparse.Namespace) -> None:
         print(f"=== Expanding {len(all_entities)} entities ===\n")
 
     def _format_source(source: str, start_line: int, number: bool) -> str:
-        if not number:
-            return source
         lines = source.splitlines()
+        limit = getattr(args, "limit", None)
+        truncated = False
+        if limit is not None and limit >= 0 and len(lines) > limit:
+            lines = lines[:limit]
+            truncated = True
+        if not number:
+            rendered = "\n".join(lines)
+            if source.endswith("\n") and lines:
+                rendered += "\n"
+            if truncated:
+                rendered += "...\n"
+            return rendered
         if not lines:
             return source
         width = len(str(start_line + len(lines) - 1))
         numbered = "\n".join(
             f"{start_line + i:>{width}d}: {line}" for i, line in enumerate(lines)
         )
-        if source.endswith("\n"):
+        if source.endswith("\n") and lines:
             numbered += "\n"
+        if truncated:
+            numbered += "...\n"
         return numbered
 
     for i, loc in enumerate(all_entities):
@@ -1172,6 +1326,8 @@ def cmd_callers(args: argparse.Namespace) -> None:
     conn.row_factory = sqlite3.Row
 
     try:
+        _warn_if_callers_stale(conn)
+
         # Get entity name for ambiguity check
         entity_row = conn.execute(
             "SELECT name, qualified_name FROM entities WHERE id = ?",
@@ -1245,12 +1401,11 @@ def cmd_callers(args: argparse.Namespace) -> None:
 
     # Print resolved callers with annotations
     for caller in sorted_callers:
-        marker = "~" if caller["resolution"] == "fuzzy" else " "
         print(format_annotated_entity(
             entity_id=caller["entity_id"],
             file_path=caller["file_path"],
             annotations=annotations,
-            marker=marker,
+            resolution=caller["resolution"],
         ))
 
     # Print truncation notice
@@ -1290,6 +1445,7 @@ def cmd_impact(args: argparse.Namespace) -> None:
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
 
+    _warn_if_callers_stale(conn)
     result = compute_impact(conn, args.entity_id, depth=args.depth, level=args.level)
 
     root = result["root"]
@@ -1388,12 +1544,11 @@ def cmd_impact(args: argparse.Namespace) -> None:
             print(f"--- {label} ({total} entities) ---")
 
         for item in sorted_items:
-            marker = "~" if item["resolution"] == "fuzzy" else " "
             print(format_annotated_entity(
                 entity_id=item["entity_id"],
                 file_path=item["file_path"],
                 annotations=annotations,
-                marker=marker,
+                resolution=item["resolution"],
             ))
             if depth > 1:
                 print(f"  {'':20s}  via: {item['via']}")
@@ -1417,6 +1572,7 @@ def cmd_scope(args: argparse.Namespace) -> None:
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
 
+    _warn_if_callers_stale(conn)
     result = compute_scope(conn, args.entity_id, level=args.level)
 
     root = result["root"]
@@ -1460,12 +1616,11 @@ def cmd_scope(args: argparse.Namespace) -> None:
             print(f"--- {label} ({total}) ---")
 
         for item in sorted_items:
-            marker = "~" if item.get("resolution") == "fuzzy" else " "
             print(format_annotated_entity(
                 entity_id=item["entity_id"],
                 file_path=item["file_path"],
                 annotations=annotations,
-                marker=marker,
+                resolution=item.get("resolution"),
             ))
 
         if was_truncated:
@@ -1497,6 +1652,8 @@ def cmd_trace(args: argparse.Namespace) -> None:
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
+
+    _warn_if_callers_stale(conn)
 
     from_id = args.from_entity.upper()
     to_id = args.to_entity.upper()
@@ -1679,6 +1836,13 @@ def cmd_grep(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
     evidence = getattr(args, "evidence", False)
     context = args.context if args.context else (2 if evidence else 0)
+    before_context = args.before_context if args.before_context is not None else context
+    after_context = args.after_context if args.after_context is not None else context
+    combined_paths = []
+    if args.path:
+        combined_paths.extend(args.path if isinstance(args.path, list) else [args.path])
+    if getattr(args, "path_positional", None):
+        combined_paths.extend(args.path_positional)
     try:
         results = grep_entities(
             pattern=args.pattern,
@@ -1687,7 +1851,10 @@ def cmd_grep(args: argparse.Namespace) -> None:
             limit=args.limit,
             ignore_case=args.ignore_case,
             context=context,
-            path_filter=args.path,
+            before_context=before_context,
+            after_context=after_context,
+            path_filter=combined_paths or None,
+            category=args.category,
         )
     except FileNotFoundError:
         print("No index found. Run `codeir index <repo_path>` first.")
@@ -1760,6 +1927,20 @@ def cmd_stats(args: argparse.Namespace) -> None:
 
     fc = stats["file_coverage"]
     print(f"\nFile coverage: {fc['files_with_entities']}/{fc['source_files_indexed']} ({fc['coverage_percent']:.1f}%)")
+
+    cq = stats.get("classification_quality", {})
+    if cq:
+        print("\nClassification quality:")
+        print(
+            f"  Category classifier: {cq['structural_files']}/{cq['structural_files'] + cq['fallback_files']} "
+            f"structural ({cq['structural_percent']:.1f}%), "
+            f"{cq['fallback_files']} fallback ({cq['fallback_percent']:.1f}%)"
+        )
+        print(
+            f"  Domain classifier:   {cq['specific_domains']} specific ({cq['specific_percent']:.1f}%), "
+            f"{cq['misc_domains']} misc ({cq['misc_percent']:.1f}%), "
+            f"{cq['unknown_domains']} unknown ({cq['unknown_percent']:.1f}%)"
+        )
 
     print(f"\nCompression level: {stats.get('compression_level', 'unknown')}")
     c = stats["compression"]
@@ -1863,6 +2044,35 @@ def _compute_module_ids(modules: list) -> Dict[str, str]:
     return result
 
 
+def _load_modules_for_bearings(conn: sqlite3.Connection) -> list[Dict[str, object]]:
+    """Load module rows with defaults for optional schema columns."""
+    cols = column_names(conn, "modules")
+    if not cols:
+        return []
+
+    select_cols = ["file_path", "category"]
+    for optional_col in ("domain", "entity_count", "deps_internal"):
+        if optional_col in cols:
+            select_cols.append(optional_col)
+
+    rows = conn.execute(
+        f"SELECT {', '.join(select_cols)} FROM modules ORDER BY category, file_path"
+    ).fetchall()
+
+    modules: list[Dict[str, object]] = []
+    for row in rows:
+        modules.append(
+            {
+                "file_path": row["file_path"],
+                "category": row["category"],
+                "domain": row["domain"] if "domain" in cols else "unknown",
+                "entity_count": row["entity_count"] if "entity_count" in cols else 0,
+                "deps_internal": row["deps_internal"] if "deps_internal" in cols else "",
+            }
+        )
+    return modules
+
+
 def _get_bearings_paths(repo_path: Path, legacy: bool = False) -> Dict[str, Path]:
     """Return the canonical bearings file paths for a repository."""
     base_dir = repo_path / (".claude" if legacy else ".codeir")
@@ -1898,10 +2108,7 @@ def _generate_bearings_files(repo_path: Path) -> None:
     conn.row_factory = sqlite3.Row
 
     try:
-        rows = conn.execute(
-            "SELECT file_path, category, entity_count, deps_internal "
-            "FROM modules ORDER BY category, file_path"
-        ).fetchall()
+        modules = _load_modules_for_bearings(conn)
     except sqlite3.OperationalError:
         print("No module classifications found. Re-index to generate bearings.")
         conn.close()
@@ -1913,12 +2120,6 @@ def _generate_bearings_files(repo_path: Path) -> None:
         total = 0
     finally:
         conn.close()
-
-    modules = [
-        {"file_path": row["file_path"], "category": row["category"],
-         "entity_count": row["entity_count"], "deps_internal": row["deps_internal"]}
-        for row in rows
-    ]
 
     module_ids = _compute_module_ids(modules)
 
@@ -2140,6 +2341,12 @@ def cmd_eval(args: argparse.Namespace) -> None:
         print(f"\nResults written to {args.output}")
 
 
+def cmd_benchmark(args: argparse.Namespace) -> None:
+    from ir.benchmark import run_benchmark
+    repo_path = (args.repo_path or Path(".")).resolve()
+    print(run_benchmark(repo_path))
+
+
 def cmd_floor_test(args: argparse.Namespace) -> None:
     if args.floor_action == "generate":
         from tests.eval.floor_test import generate_test_pack
@@ -2195,6 +2402,7 @@ def main() -> None:
         "rules": cmd_rules,
         "eval": cmd_eval,
         "floor-test": cmd_floor_test,
+        "benchmark": cmd_benchmark,
     }
 
     handler = handlers.get(args.command)

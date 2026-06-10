@@ -148,6 +148,7 @@ class RustFrontend:
         return _extract_entities_from_tree(
             parsed=parsed,
             file_path=file_path,
+            module_scope=self.module_scope(file_path),
             include_semantic=include_semantic,
         )
 
@@ -181,6 +182,9 @@ class RustFrontend:
 
         return roots
 
+    def module_scope(self, file_path: Path, repo_path: Optional[Path] = None) -> List[str]:
+        return _module_scope_from_path(file_path)
+
     def split_imports(
         self,
         all_imports: Sequence[str],
@@ -192,14 +196,21 @@ class RustFrontend:
         return default_split_imports(all_imports, internal_roots)
 
     def classify_file(self, file_path: Path, tree: ParsedRustFile) -> str:
-        return _classify_rust_file(file_path, tree.source)
+        return _classify_rust_file(file_path, tree)
 
-    def classify_domain(self, file_path: Path, tree: ParsedRustFile) -> str:
-        return _classify_rust_domain(file_path, tree.source)
+    def classify_domain(
+        self,
+        file_path: Path,
+        tree: ParsedRustFile,
+        *,
+        category: Optional[str] = None,
+        internal_roots: Optional[set[str]] = None,
+    ) -> str:
+        return _classify_rust_domain(file_path, tree)
 
     def build_import_map(self, tree: ParsedRustFile, file_path: Path, repo_path: Path) -> Dict[str, str]:
         internal_roots = self.discover_internal_roots(repo_path)
-        module_scope = _module_scope_from_path(file_path)
+        module_scope = self.module_scope(file_path, repo_path)
         current_module = list(module_scope)
         current_file_module = list(module_scope)
 
@@ -293,10 +304,10 @@ def _module_scope_from_path(file_path: Path) -> List[str]:
 def _extract_entities_from_tree(
     parsed: ParsedRustFile,
     file_path: Path,
+    module_scope: List[str],
     include_semantic: bool,
 ) -> List[Dict[str, object]]:
     entities: List[Dict[str, object]] = []
-    module_scope = _module_scope_from_path(file_path)
     _visit_container(
         node=parsed.tree.root_node,
         source=parsed.source,
@@ -891,7 +902,35 @@ def _cargo_package_name(cargo_toml: Path) -> str:
     return ""
 
 
-def _classify_rust_file(file_path: Path, source: bytes) -> str:
+def _rust_tree_stats(parsed: ParsedRustFile) -> Dict[str, int]:
+    """Collect coarse structural counts from the parsed Rust tree."""
+    stats = {
+        "functions": 0,
+        "traits": 0,
+        "structs": 0,
+        "enums": 0,
+        "consts": 0,
+        "docs": 0,
+    }
+
+    for node in _walk_descendants(parsed.tree.root_node):
+        if node.type == "function_item":
+            stats["functions"] += 1
+        elif node.type == "trait_item":
+            stats["traits"] += 1
+        elif node.type == "struct_item":
+            stats["structs"] += 1
+        elif node.type == "enum_item":
+            stats["enums"] += 1
+        elif node.type in {"const_item", "static_item"}:
+            stats["consts"] += 1
+        elif node.type == "line_comment":
+            stats["docs"] += 1
+
+    return stats
+
+
+def _classify_rust_file(file_path: Path, parsed: ParsedRustFile) -> str:
     name = file_path.name.lower()
     for filenames, category in _FILENAME_CATEGORIES:
         if name in filenames:
@@ -902,29 +941,30 @@ def _classify_rust_file(file_path: Path, source: bytes) -> str:
         if lowered in _DIRECTORY_CATEGORIES:
             return _DIRECTORY_CATEGORIES[lowered]
 
-    text = source.decode("utf-8", errors="ignore")
+    text = parsed.source.decode("utf-8", errors="ignore")
+    stats = _rust_tree_stats(parsed)
     if "#[cfg(test)]" in text or "mod tests" in text:
         return "tests"
-    if "trait " in text and "struct " not in text and "enum " not in text:
+    if stats["traits"] > 0 and stats["structs"] == 0 and stats["enums"] == 0:
         return "schema"
-    if text.count("struct ") + text.count("enum ") >= 2 and text.count("fn ") <= 2:
+    if stats["structs"] + stats["enums"] >= 2 and stats["functions"] <= 2:
         return "schema"
-    if text.count("const ") >= 3 and text.count("fn ") == 0:
+    if stats["consts"] >= 3 and stats["functions"] == 0:
         return "constants"
     if file_path.stem == "mod":
         return "init"
-    if text.strip().startswith("//") and "fn " not in text and "struct " not in text:
+    if text.strip().startswith("//") and stats["functions"] == 0 and stats["structs"] == 0 and stats["enums"] == 0:
         return "docs"
     return "core_logic"
 
 
-def _classify_rust_domain(file_path: Path, source: bytes) -> str:
+def _classify_rust_domain(file_path: Path, parsed: ParsedRustFile) -> str:
     for part in (file_path.stem, *file_path.parts):
         lowered = str(part).lower()
         if lowered in _DOMAIN_FILE_PATTERNS:
             return _DOMAIN_FILE_PATTERNS[lowered]
 
-    imports = _crates_from_source(source)
+    imports = _crates_from_tree(parsed)
     for crate_name in imports:
         if crate_name in _DOMAIN_CRATES_STRONG:
             return _DOMAIN_CRATES_STRONG[crate_name]
@@ -940,11 +980,11 @@ def _classify_rust_domain(file_path: Path, source: bytes) -> str:
     return "unknown"
 
 
-def _crates_from_source(source: bytes) -> List[str]:
-    text = source.decode("utf-8", errors="ignore")
+def _crates_from_tree(parsed: ParsedRustFile) -> List[str]:
     crates: Set[str] = set()
-    for match in re.finditer(r"^\s*use\s+([A-Za-z_][A-Za-z0-9_]*)", text, flags=re.MULTILINE):
-        crates.add(match.group(1))
+    for use_path, _alias in _iter_use_entries(parsed.tree.root_node, parsed.source):
+        if use_path:
+            crates.add(use_path[0])
     return sorted(crates)
 
 

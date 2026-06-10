@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from index.store.db import connect, column_names
+from index.db.db import connect, column_names
 
 
 def get_entity_with_ir(

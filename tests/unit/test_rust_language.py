@@ -104,3 +104,23 @@ pub struct User {
     assert parsed is not None
     assert frontend.classify_file(Path("src/db/models.rs"), parsed) == "schema"
     assert frontend.classify_domain(Path("src/db/models.rs"), parsed) == "db"
+
+
+def test_rust_classification_ignores_keywords_in_strings_and_comments(tmp_path: Path, frontend: RustFrontend) -> None:
+    rust_file = tmp_path / "src" / "service.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+// mentions struct enum fn const in docs, but should stay core logic
+pub fn run() {
+    let banner = "struct enum fn const";
+    println!("{}", banner);
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    parsed = frontend.parse_ast(rust_file)
+    assert parsed is not None
+    assert frontend.classify_file(Path("src/service.rs"), parsed) == "core_logic"

@@ -7,8 +7,10 @@ directory position, and AST structural analysis. No LLM involvement.
 from __future__ import annotations
 
 import ast
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 
 CATEGORIES = (
@@ -25,8 +27,9 @@ CATEGORIES = (
     "utils",
 )
 
-# Domain classification - what the code does, not what type of code it is
+# Domain classification - what functional/architectural concern the code participates in
 DOMAINS = (
+    # --- Infrastructure domains (original) ---
     "http",      # HTTP/networking: requests, responses, sessions, cookies
     "auth",      # Authentication: login, tokens, credentials, digest, basic
     "crypto",    # Cryptography: encryption, hashing, signing
@@ -36,8 +39,56 @@ DOMAINS = (
     "async",     # Async/concurrency: tasks, threads, queues
     "parse",     # Parsing/encoding: JSON, XML, YAML, serialization
     "net",       # Low-level networking: sockets, TCP/UDP
-    "unknown",   # No clear domain signal
+    # --- Application-structure domains ---
+    "ui",        # UI/rendering: templates, views, forms, widgets
+    "validation", # Input validation: validators, cleaners, schema enforcement
+    "i18n",      # Internationalization: translation, locale, gettext
+    "task",      # Background tasks: celery, workers, jobs, scheduling
+    "event",     # Events/signals: dispatch, hooks, listeners, pubsub
+    "log",       # Logging/observability: logging, tracing, metrics
+    "mail",      # Email/notifications: smtp, sendgrid, mailgun
+    "media",     # Media processing: images, thumbnails, uploads, audio/video
+    "admin",     # Admin/management: admin panels, management commands
+    "cache",     # Caching: memcached, redis-as-cache, cache backends
+    "misc",      # Classified — genuinely no applicable domain (cross-cutting, glue, boilerplate)
+    "unknown",   # Indexer failure — parse error, missing tree, file skipped
 )
+
+# Sentinel constants — use these instead of string literals for the two
+# terminal states so typos are caught at import time.
+DOMAIN_MISC = "misc"
+DOMAIN_UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class DomainContext:
+    """Language-neutral hints that can refine domain resolution."""
+
+    category: Optional[str] = None
+    internal_roots: Optional[Set[str]] = None
+
+
+@dataclass
+class DomainEvidence:
+    """Aggregated domain signals from language-specific and shared heuristics."""
+
+    import_scores: Dict[str, int] = field(default_factory=dict)
+    name_scores: Dict[str, int] = field(default_factory=dict)
+    package_scores: Dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DomainDecision:
+    """Resolved module-domain decision with provenance for later refinement."""
+
+    domain: str
+    source: str
+    strength: str
+    scores: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def is_refinable(self) -> bool:
+        return self.domain in {DOMAIN_MISC, DOMAIN_UNKNOWN} or self.strength == "weak"
 
 # ---------------------------------------------------------------------------
 # Filename-based rules (highest priority, handles ~60 % of cases)
@@ -206,6 +257,35 @@ _DOMAIN_FILE_PATTERNS: Dict[str, str] = {
     # Parsing domain
     "json": "parse", "xml": "parse", "yaml": "parse", "parser": "parse",
     "serializer": "parse", "encoding": "parse", "codec": "parse",
+    # UI/rendering domain
+    "templates": "ui", "template": "ui", "views": "ui", "view": "ui",
+    "forms": "ui", "form": "ui", "widgets": "ui", "widget": "ui",
+    "rendering": "ui", "renderer": "ui", "layout": "ui", "layouts": "ui",
+    "pages": "ui", "components": "ui",
+    # Validation domain
+    "validators": "validation", "validator": "validation", "validation": "validation",
+    # i18n domain
+    "locale": "i18n", "locales": "i18n", "translation": "i18n", "translations": "i18n",
+    "i18n": "i18n", "l10n": "i18n", "messages": "i18n",
+    # Task/job domain
+    "tasks": "task", "workers": "task", "worker": "task", "jobs": "task",
+    "job": "task", "celery": "task", "cron": "task", "scheduler": "task",
+    # Event/signal domain
+    "signals": "event", "signal": "event", "events": "event", "dispatch": "event",
+    "hooks": "event", "listeners": "event", "handlers": "event",
+    # Logging/observability domain
+    "logging": "log", "logger": "log", "tracing": "log", "metrics": "log",
+    "observability": "log",
+    # Mail domain
+    "email": "mail", "mail": "mail", "notifications": "mail", "notification": "mail",
+    "smtp": "mail",
+    # Media domain
+    "images": "media", "image": "media", "thumbnails": "media", "thumbnail": "media",
+    "media": "media", "avatar": "media", "photos": "media",
+    # Admin domain
+    "admin": "admin", "management": "admin", "backoffice": "admin",
+    # Cache domain
+    "cache": "cache", "caching": "cache",
 }
 
 # Strong import signals: specific enough that a single import determines domain.
@@ -219,7 +299,7 @@ _DOMAIN_IMPORTS_STRONG: Dict[str, str] = {
     "cryptography": "crypto", "hmac": "crypto",
     # Database
     "sqlalchemy": "db", "psycopg2": "db", "pymysql": "db", "sqlite3": "db",
-    "motor": "db", "pymongo": "db", "redis": "db",
+    "motor": "db", "pymongo": "db",
     # CLI
     "argparse": "cli", "typer": "cli",
     # Parsing
@@ -228,6 +308,30 @@ _DOMAIN_IMPORTS_STRONG: Dict[str, str] = {
     "multiprocessing": "async", "concurrent": "async", "queue": "async",
     # Low-level net
     "socket": "net", "select": "net", "selectors": "net",
+    # UI/rendering
+    "jinja2": "ui", "mako": "ui", "wtforms": "ui", "django_crispy_forms": "ui",
+    "gi": "ui", "gtk": "ui",
+    # Validation
+    "cerberus": "validation", "marshmallow": "validation", "voluptuous": "validation",
+    "pydantic": "validation",
+    # i18n
+    "babel": "i18n", "gettext": "i18n",
+    # Task/job
+    "celery": "task", "rq": "task", "dramatiq": "task", "huey": "task",
+    "apscheduler": "task",
+    # Event/signal
+    "blinker": "event",
+    # Logging/observability
+    "sentry_sdk": "log", "opentelemetry": "log", "structlog": "log",
+    "loguru": "log",
+    # Mail
+    "sendgrid": "mail", "mailgun": "mail", "smtplib": "mail",
+    # Media
+    "PIL": "media", "pillow": "media", "wand": "media", "ffmpeg": "media",
+    "imageio": "media",
+    # Cache
+    "memcache": "cache", "pymemcache": "cache", "cachetools": "cache",
+    "diskcache": "cache",
 }
 
 # Weak import signals: too commonly used as utilities to determine domain alone.
@@ -248,14 +352,91 @@ _DOMAIN_IMPORTS_WEAK: Dict[str, str] = {
     "json": "parse", "xml": "parse",
     # Async — asyncio/threading used as utilities
     "asyncio": "async", "threading": "async",
+    # Cache — redis is commonly a cache but also used as a DB/broker
+    "redis": "cache",
+    # Logging — stdlib logging is everywhere, not always the file's purpose
+    "logging": "log",
+    # i18n — locale module used for formatting, not always i18n
+    "locale": "i18n",
+    # Mail — email stdlib module used for MIME parsing too
+    "email": "mail",
 }
 
 # Combined map for backwards-compatible lookups
 _DOMAIN_IMPORTS: Dict[str, str] = {**_DOMAIN_IMPORTS_STRONG, **_DOMAIN_IMPORTS_WEAK}
 
+# Submodule import signals: match on the full dotted path prefix.
+# Catches framework-namespaced imports like `from django.forms import ...`
+# where the top-level package alone is too ambiguous.
+_DOMAIN_SUBMODULE_STRONG: Dict[str, str] = {
+    # Django submodules
+    "django.forms": "ui", "django.template": "ui", "django.views": "ui",
+    "django.shortcuts": "ui",
+    "django.db": "db", "django.db.models": "db",
+    "django.contrib.admin": "admin",
+    "django.contrib.auth": "auth",
+    "django.core.mail": "mail",
+    "django.core.cache": "cache",
+    "django.core.validators": "validation",
+    "django.dispatch": "event",
+    "django.utils.translation": "i18n",
+    "django.core.management": "admin",
+    "django.core.files": "fs",
+    "django.http": "http",
+    "django.urls": "http",
+    "django.test": "http",  # test client is HTTP-centric
+    # Flask submodules
+    "flask.views": "ui", "flask.templating": "ui",
+    # GTK / GI
+    "gi.repository": "ui",
+    "gi.repository.gtk": "ui",
+    # Tryton submodules
+    "trytond.model": "db", "trytond.pool": "db",
+    "trytond.wizard": "ui",
+    "trytond.report": "ui",
+    "trytond.ir": "db",
+    "trytond.transaction": "db",
+}
+
 _STRONG_SIGNAL_SCORE = 2  # strong import alone is sufficient
 _WEAK_SIGNAL_SCORE = 1    # weak import needs a second signal to reach threshold
 _DOMAIN_THRESHOLD = 2
+_DOMAIN_CATEGORY_HINTS: Dict[str, str] = {
+    "router": "http",
+    "schema": "validation",
+}
+_DOMAIN_SELF_PACKAGE_HINTS: Dict[str, str] = {
+    "flask": "http",
+    "django": "http",
+    "werkzeug": "http",
+    "sqlalchemy": "db",
+    "trytond": "db",
+}
+_DOMAIN_NAME_KEYWORDS: Dict[str, str] = {
+    "file": "fs",
+    "files": "fs",
+    "dir": "fs",
+    "path": "fs",
+    "save": "fs",
+    "load": "fs",
+    "read": "fs",
+    "write": "fs",
+    "upload": "fs",
+    "download": "fs",
+    "storage": "fs",
+    "request": "http",
+    "response": "http",
+    "route": "http",
+    "http": "http",
+    "cookie": "http",
+    "session": "http",
+    "redirect": "http",
+    "encrypt": "crypto",
+    "decrypt": "crypto",
+    "hash": "crypto",
+    "signature": "crypto",
+    "verify": "crypto",
+}
 
 
 class _DomainVisitor(ast.NodeVisitor):
@@ -264,21 +445,30 @@ class _DomainVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.domain_scores: Dict[str, int] = {}
 
-    def _record(self, mod: str) -> None:
-        if mod in _DOMAIN_IMPORTS_STRONG:
-            domain = _DOMAIN_IMPORTS_STRONG[mod]
+    def _record_module(self, full_module: str) -> None:
+        """Score a module path, checking submodule signals first, then top-level."""
+        # Check submodule signals (longest prefix match)
+        for prefix, domain in _DOMAIN_SUBMODULE_STRONG.items():
+            if full_module == prefix or full_module.startswith(prefix + "."):
+                self.domain_scores[domain] = self.domain_scores.get(domain, 0) + _STRONG_SIGNAL_SCORE
+                return
+
+        # Fall back to top-level package lookup
+        top = full_module.split(".")[0]
+        if top in _DOMAIN_IMPORTS_STRONG:
+            domain = _DOMAIN_IMPORTS_STRONG[top]
             self.domain_scores[domain] = self.domain_scores.get(domain, 0) + _STRONG_SIGNAL_SCORE
-        elif mod in _DOMAIN_IMPORTS_WEAK:
-            domain = _DOMAIN_IMPORTS_WEAK[mod]
+        elif top in _DOMAIN_IMPORTS_WEAK:
+            domain = _DOMAIN_IMPORTS_WEAK[top]
             self.domain_scores[domain] = self.domain_scores.get(domain, 0) + _WEAK_SIGNAL_SCORE
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            self._record(alias.name.split(".")[0])
+            self._record_module(alias.name)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module:
-            self._record(node.module.split(".")[0])
+            self._record_module(node.module)
 
     @property
     def domain_signals(self) -> Dict[str, int]:
@@ -286,30 +476,300 @@ class _DomainVisitor(ast.NodeVisitor):
         return self.domain_scores
 
 
-def classify_domain(file_path: Path, tree: ast.Module) -> str:
-    """Classify a file by domain based on filename, directory, and imports.
+class _DomainNameVisitor(ast.NodeVisitor):
+    """Collect weak domain signals from class and function names."""
 
-    Returns one of: http, auth, crypto, db, fs, cli, async, parse, net, unknown
-    """
-    # 1. Check filename
+    def __init__(self) -> None:
+        self.domain_scores: Dict[str, int] = {}
+
+    def _record_name(self, name: str) -> None:
+        for domain, score in _score_domain_keywords(name).items():
+            self.domain_scores[domain] = self.domain_scores.get(domain, 0) + score
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._record_name(node.name)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._record_name(node.name)
+        self.generic_visit(node)
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+
+def _score_domain_keywords(*texts: str) -> Dict[str, int]:
+    scores: Dict[str, int] = {}
+    for text in texts:
+        lowered = text.strip("_")
+        if not lowered:
+            continue
+        tokens = {
+            token
+            for token in re.split(r"[_\W]+|(?<!^)(?=[A-Z])", lowered)
+            if token
+        }
+        for token in tokens:
+            domain = _DOMAIN_NAME_KEYWORDS.get(token.lower())
+            if domain:
+                scores[domain] = scores.get(domain, 0) + 1
+    return scores
+
+
+def _qualifying_domains(scores: Dict[str, int]) -> Dict[str, int]:
+    return {domain: score for domain, score in scores.items() if score >= _DOMAIN_THRESHOLD}
+
+
+def _merge_domain_scores(*score_maps: Dict[str, int]) -> Dict[str, int]:
+    merged: Dict[str, int] = {}
+    for score_map in score_maps:
+        for domain, score in score_map.items():
+            merged[domain] = merged.get(domain, 0) + score
+    return merged
+
+
+def _package_domain_hint(file_path: Path, context: DomainContext) -> Optional[str]:
+    if not context.internal_roots:
+        return None
+    internal_roots = {root.lower() for root in context.internal_roots}
+    for part in file_path.parts[:-1]:
+        lowered = part.lower()
+        if lowered in internal_roots:
+            return _DOMAIN_SELF_PACKAGE_HINTS.get(lowered)
+    return None
+
+
+def _collect_domain_evidence(
+    file_path: Path,
+    tree: Optional[ast.Module],
+    context: DomainContext,
+) -> DomainEvidence:
+    evidence = DomainEvidence()
+
+    package_domain = _package_domain_hint(file_path, context)
+    if package_domain:
+        evidence.package_scores[package_domain] = _STRONG_SIGNAL_SCORE
+
+    if tree is None:
+        return evidence
+
+    import_visitor = _DomainVisitor()
+    import_visitor.visit(tree)
+    evidence.import_scores = dict(import_visitor.domain_scores)
+
+    name_visitor = _DomainNameVisitor()
+    name_visitor.visit(tree)
+    evidence.name_scores = dict(name_visitor.domain_scores)
+
+    return evidence
+
+
+def _resolve_domain_from_evidence(
+    file_path: Path,
+    tree: Optional[ast.Module],
+    evidence: DomainEvidence,
+    context: DomainContext,
+) -> DomainDecision:
     stem = file_path.stem.lower()
     if stem in _DOMAIN_FILE_PATTERNS:
-        return _DOMAIN_FILE_PATTERNS[stem]
+        domain = _DOMAIN_FILE_PATTERNS[stem]
+        return DomainDecision(domain=domain, source="filename", strength="strong")
 
-    # 2. Check directory parts
     for part in file_path.parts:
         lower = part.lower()
         if lower in _DOMAIN_FILE_PATTERNS:
-            return _DOMAIN_FILE_PATTERNS[lower]
+            domain = _DOMAIN_FILE_PATTERNS[lower]
+            return DomainDecision(domain=domain, source="directory", strength="strong")
 
-    # 3. Check imports — only assign if winning domain meets threshold
-    visitor = _DomainVisitor()
-    visitor.visit(tree)
-    qualifying = {d: s for d, s in visitor.domain_scores.items() if s >= _DOMAIN_THRESHOLD}
+    combined_scores = _merge_domain_scores(evidence.package_scores, evidence.import_scores)
+    qualifying = _qualifying_domains(combined_scores)
     if qualifying:
-        return max(qualifying, key=qualifying.get)
+        best_domain = max(qualifying, key=qualifying.get)
+        source = "self_package" if evidence.package_scores.get(best_domain, 0) >= _DOMAIN_THRESHOLD else "strong_import"
+        return DomainDecision(
+            domain=best_domain,
+            source=source,
+            strength="strong",
+            scores=qualifying,
+        )
 
-    return "unknown"
+    qualifying = _qualifying_domains(evidence.name_scores)
+    if qualifying:
+        best_domain = max(qualifying, key=qualifying.get)
+        return DomainDecision(
+            domain=best_domain,
+            source="name_signal",
+            strength="weak",
+            scores=qualifying,
+        )
+
+    category_domain = _DOMAIN_CATEGORY_HINTS.get((context.category or "").lower())
+    if category_domain:
+        return DomainDecision(domain=category_domain, source="category_hint", strength="weak")
+
+    if tree is not None:
+        return DomainDecision(domain=DOMAIN_MISC, source="no_signal", strength="unresolved")
+    return DomainDecision(domain=DOMAIN_UNKNOWN, source="parse_failure", strength="unresolved")
+
+
+def classify_domain_decision(
+    file_path: Path,
+    tree: Optional[ast.Module],
+    *,
+    category: Optional[str] = None,
+    internal_roots: Optional[Set[str]] = None,
+) -> DomainDecision:
+    """Resolve a module domain plus provenance for post-pass refinement."""
+    context = DomainContext(category=category, internal_roots=internal_roots)
+    evidence = _collect_domain_evidence(file_path, tree, context)
+    return _resolve_domain_from_evidence(file_path, tree, evidence, context)
+
+
+def infer_entity_domain_scores(
+    entity_name: str,
+    qualified_name: str = "",
+    call_names: Optional[List[str]] = None,
+) -> Dict[str, int]:
+    """Infer per-entity domain hints from names and semantic call symbols."""
+    scores = _score_domain_keywords(entity_name, qualified_name)
+    for call_name in call_names or []:
+        for domain, score in _score_domain_keywords(call_name).items():
+            scores[domain] = scores.get(domain, 0) + score
+    return scores
+def classify_domain(
+    file_path: Path,
+    tree: Optional[ast.Module],
+    *,
+    category: Optional[str] = None,
+    internal_roots: Optional[Set[str]] = None,
+) -> str:
+    """Classify a file by domain based on shared and language-specific hints.
+
+    `category` and `internal_roots` are optional contextual hints supplied by
+    the indexer so the same resolver can be reused across languages.
+    """
+    return classify_domain_decision(
+        file_path,
+        tree,
+        category=category,
+        internal_roots=internal_roots,
+    ).domain
+
+
+# ---------------------------------------------------------------------------
+# Layer 2: Internal-import domain propagation
+# ---------------------------------------------------------------------------
+
+def _build_module_name_index(all_rel_paths: List[str]) -> Dict[str, str]:
+    """Build a map from possible import names to file paths.
+
+    For a file at 'trytond/model/modelview.py', generates these keys:
+      - 'trytond.model.modelview' -> 'trytond/model/modelview.py'
+      - 'trytond.model'           -> 'trytond/model/modelview.py'  (if not already taken)
+      - 'model.modelview'         -> ...
+      - 'modelview'               -> ...
+
+    For __init__.py files, the package name is the directory:
+      - 'trytond/model/__init__.py' -> key 'trytond.model'
+    """
+    index: Dict[str, str] = {}
+
+    for rel_path in all_rel_paths:
+        if not rel_path.endswith(".py"):
+            continue
+
+        # Convert path to dotted module segments
+        stripped = rel_path[:-3]  # remove .py
+        if stripped.endswith("/__init__"):
+            stripped = stripped[:-9]  # remove /__init__
+        parts = stripped.replace("/", ".").split(".")
+
+        # Register progressively shorter suffixes (longest wins on conflict)
+        for i in range(len(parts)):
+            key = ".".join(parts[i:])
+            if key and key not in index:
+                index[key] = rel_path
+
+    return index
+
+
+def extract_full_import_paths(tree: ast.Module) -> List[str]:
+    """Extract full dotted import paths from an AST (not truncated to top-level).
+
+    Returns e.g. ['trytond.model', 'trytond.pool', 'datetime'] for:
+      from trytond.model import ModelView
+      from trytond.pool import Pool
+      import datetime
+    """
+    paths: List[str] = []
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                paths.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                paths.append(node.module)
+    return paths
+
+
+def propagate_domains(
+    file_domains: Dict[str, str],
+    file_imports: Dict[str, List[str]],
+    all_rel_paths: List[str],
+    min_signals: int = 2,
+) -> None:
+    """Propagate domains to unclassified files via their internal import graph.
+
+    For each file with domain='unknown', resolve its imports to files in the repo.
+    If the resolved files have known (non-unknown/misc) domains, vote on the most
+    common. Only assign if at least `min_signals` imports agree on the same domain.
+
+    Modifies file_domains in place.
+
+    Args:
+        file_domains: {rel_path: domain} — modified in place.
+        file_imports: {rel_path: [full_dotted_import_path, ...]} — from extract_full_import_paths.
+        all_rel_paths: all file paths in the repo (for building the module name index).
+        min_signals: minimum number of resolved imports that must agree. Must be > 0.
+    """
+    if min_signals <= 0:
+        raise ValueError(f"min_signals must be positive, got {min_signals}")
+
+    module_index = _build_module_name_index(all_rel_paths)
+    _non_domain = {DOMAIN_UNKNOWN, DOMAIN_MISC}
+
+    unresolved_files = [fp for fp, d in file_domains.items() if d in {DOMAIN_UNKNOWN, DOMAIN_MISC}]
+
+    for rel_path in unresolved_files:
+        import_paths = file_imports.get(rel_path, [])
+        if not import_paths:
+            continue
+
+        domain_votes: Dict[str, int] = {}
+        for imp in import_paths:
+            resolved_path = module_index.get(imp)
+            if resolved_path is None:
+                # Walk progressively shorter prefixes:
+                # 'trytond.model.modelview' → 'trytond.model' → 'trytond'
+                # Pre-split once to avoid repeated str.split in the inner loop.
+                parts = imp.split(".")
+                for end in range(len(parts) - 1, 0, -1):
+                    resolved_path = module_index.get(".".join(parts[:end]))
+                    if resolved_path is not None:
+                        break
+
+            if resolved_path is None:
+                continue
+
+            dep_domain = file_domains.get(resolved_path, DOMAIN_UNKNOWN)
+            if dep_domain not in _non_domain:
+                domain_votes[dep_domain] = domain_votes.get(dep_domain, 0) + 1
+
+        if not domain_votes:
+            continue
+
+        best_domain = max(domain_votes, key=domain_votes.get)
+        if domain_votes[best_domain] >= min_signals:
+            file_domains[rel_path] = best_domain
 
 
 def _get_name(node: ast.AST) -> str:
@@ -417,6 +877,33 @@ def classify_file(file_path: Path, tree: ast.Module) -> str:
     return "core_logic"
 
 
+def classify_file_with_stage(file_path: Path, tree: ast.Module) -> Tuple[str, int]:
+    """Like classify_file but also returns which stage fired (1–4).
+
+    Stage 1 = filename pattern, 2 = directory pattern,
+    3 = AST content analysis, 4 = count-based fallback.
+    """
+    cat = _classify_by_filename(file_path)
+    if cat:
+        return cat, 1
+
+    cat = _classify_by_directory(file_path)
+    if cat:
+        return cat, 2
+
+    cat, visitor = _classify_by_ast(tree)
+    if cat:
+        return cat, 3
+
+    # Stage 4: fallback heuristic
+    total_defs = visitor.total_function_count + visitor.total_class_count
+    if total_defs == 0:
+        return ("constants" if visitor.top_level_assign_count > 0 else "docs"), 4
+    if total_defs <= 3 and visitor.top_level_assign_count == 0:
+        return "utils", 4
+    return "core_logic", 4
+
+
 def classify_files(file_entries: List[Dict[str, object]]) -> Dict[str, str]:
     """Batch classify files. Each entry needs 'file_path' (Path) and 'tree' (ast.Module)."""
     return {
@@ -432,6 +919,8 @@ def classify_files(file_entries: List[Dict[str, object]]) -> Dict[str, str]:
 def to_module_ir_line(
     module_id: str, file_path: str, category: str,
     entity_count: int, deps_internal: str, churn: str = "-",
+    domain: str = "unknown",
+    duplicate_filenames: Optional[Set[str]] = None,
 ) -> str:
     """Emit a compact module IR line.
 
@@ -453,15 +942,23 @@ def to_module_ir_line(
         "db.py", "app.py", "main.py", "users.py", "schemas.py",
         "__init__.py", "strategy.py", "config.py", "settings.py",
     }
-    if filename.lower() in common_names and len(parts) > 1:
-        # Include up to 2 parent directories for context
-        context_parts = parts[-3:] if len(parts) >= 3 else parts
+    duplicate_filenames = duplicate_filenames or set()
+    if (filename.lower() in common_names or filename in duplicate_filenames) and len(parts) > 1:
+        # Include up to 3 parent directories for stronger disambiguation.
+        context_parts = parts[-4:] if len(parts) >= 4 else parts
         display_path = "/".join(context_parts)
     else:
         display_path = filename
 
-    deps = deps_internal if deps_internal else "-"
-    return f"{display_path} | cat:{category} | entities:{entity_count} | deps:{deps} | churn:{churn}"
+    parts_out = [display_path, f"cat:{category}"]
+    if domain and domain != "unknown":
+        parts_out.append(f"dom:{domain}")
+    parts_out.append(f"entities:{entity_count}")
+    if deps_internal:
+        parts_out.append(f"deps:{deps_internal}")
+    if churn and churn != "-":
+        parts_out.append(f"churn:{churn}")
+    return " | ".join(parts_out)
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +984,16 @@ def _group_by_category(
     return by_cat
 
 
+def _duplicate_filenames(modules: List[Dict[str, object]]) -> Set[str]:
+    """Return bare filenames that appear more than once in a module set."""
+    counts: Dict[str, int] = {}
+    for mod in modules:
+        fp = str(mod["file_path"])
+        fname = fp.rsplit("/", 1)[-1] if "/" in fp else fp
+        counts[fname] = counts.get(fname, 0) + 1
+    return {fname for fname, count in counts.items() if count > 1}
+
+
 def _collapse_patterns(
     cat_mods: List[Dict[str, object]],
     module_ids: Dict[str, str],
@@ -499,6 +1006,7 @@ def _collapse_patterns(
     """
     individual: List[str] = []
     small: List[Dict[str, object]] = []
+    duplicate_filenames = _duplicate_filenames(cat_mods)
 
     for mod in cat_mods:
         ec = int(mod.get("entity_count", 0))
@@ -509,6 +1017,8 @@ def _collapse_patterns(
                 category=str(mod["category"]),
                 entity_count=ec,
                 deps_internal=str(mod.get("deps_internal", "")),
+                domain=str(mod.get("domain", "unknown")),
+                duplicate_filenames=duplicate_filenames,
             ))
         else:
             small.append(mod)
@@ -552,6 +1062,8 @@ def _collapse_patterns(
             category=str(mod["category"]),
             entity_count=int(mod.get("entity_count", 0)),
             deps_internal=str(mod.get("deps_internal", "")),
+            domain=str(mod.get("domain", "unknown")),
+            duplicate_filenames=duplicate_filenames,
         ))
 
     return individual, pattern_summaries
@@ -646,7 +1158,6 @@ def generate_category_file(
     """
     cat_mods = sorted(cat_modules, key=lambda m: str(m["file_path"]))
     cat_entities = sum(int(m.get("entity_count", 0)) for m in cat_mods)
-
     lines: List[str] = []
     lines.append(f"# {repo_name} — {category}")
     lines.append("")
@@ -660,6 +1171,8 @@ def generate_category_file(
             lines.append(pattern_summary)
             lines.append("")
 
+    duplicate_filenames = _duplicate_filenames(cat_mods)
+
     lines.append("### Modules")
     lines.append("```")
     for mod in cat_mods:
@@ -669,6 +1182,8 @@ def generate_category_file(
             category=category,
             entity_count=int(mod.get("entity_count", 0)),
             deps_internal=str(mod.get("deps_internal", "")),
+            domain=str(mod.get("domain", "unknown")),
+            duplicate_filenames=duplicate_filenames,
         ))
     lines.append("```")
     lines.append("")

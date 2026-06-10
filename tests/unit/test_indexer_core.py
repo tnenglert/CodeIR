@@ -11,11 +11,14 @@ from index.indexer import (
     _entity_base_from_id,
     _next_entity_id,
     _primary_language,
+    _refine_module_domains_from_entities,
+    index_repo,
     map_legacy_mode_to_level,
     resolve_compression_level,
     _detect_changes,
     _collect_existing_ids_by_base,
 )
+from ir.classifier import DomainDecision
 
 
 # ---------------------------------------------------------------------------
@@ -297,3 +300,225 @@ class TestDetectChanges:
         assert f in changed
         assert unchanged == []
         conn.close()
+
+
+def test_index_repo_marks_callers_stale_when_pass4_fails(monkeypatch, tmp_path):
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "mod.py").write_text(
+        "def helper():\n    return 1\n\n\ndef call_helper():\n    return helper()\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "index.indexer.build_callers_table",
+        lambda repo_path, db_path: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    result = index_repo(
+        tmp_path,
+        {
+            "compression_level": "Behavior",
+            "hidden_dirs": [".git", ".codeir", "__pycache__"],
+        },
+    )
+
+    assert result["callers_status"] == "stale"
+    assert "boom" in result["callers_error"]
+    assert result["total_entities"] >= 2
+
+    conn = sqlite3.connect(tmp_path / ".codeir" / "entities.db")
+    meta = dict(conn.execute("SELECT key, value FROM index_meta").fetchall())
+    conn.close()
+
+    assert meta["callers_status"] == "stale"
+    assert "boom" in meta["callers_error"]
+
+
+def test_index_repo_emits_progress_events(monkeypatch, tmp_path):
+    (tmp_path / "sample.py").write_text(
+        "def helper():\n    return 1\n\n\ndef call_helper():\n    return helper()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "index.indexer.build_callers_table",
+        lambda repo_path, db_path: (0, []),
+    )
+    events = []
+
+    index_repo(
+        tmp_path,
+        {
+            "compression_level": "Behavior",
+            "hidden_dirs": [".git", ".codeir", "__pycache__"],
+            "_progress": lambda phase, stats: events.append((phase, stats)),
+        },
+    )
+
+    phases = [phase for phase, _ in events]
+    assert phases[:2] == ["setup", "discovery"]
+    assert "bare_parse" in phases
+    assert "semantic_parse" in phases
+    assert "ir_persist" in phases
+    assert "caller_graph_start" in phases
+    assert "caller_graph_done" in phases
+    assert phases[-1] == "complete"
+    discovery = dict(events)["discovery"]
+    assert discovery["files_scanned"] == 1
+    assert discovery["files_changed"] == 1
+
+
+class TestModuleDomainRefinement:
+    def test_upgrades_misc_module_from_entity_votes(self):
+        file_domains = {"pkg/project_manager.py": "misc"}
+        decisions = {
+            "pkg/project_manager.py": DomainDecision("misc", "no_signal", "unresolved")
+        }
+        full_entities = [
+            {
+                "file_path": "pkg/project_manager.py",
+                "name": "save_file_to_project",
+                "qualified_name": "pkg.project_manager.ProjectManager.save_file_to_project",
+                "semantic": {"calls": ["read_path"]},
+            },
+            {
+                "file_path": "pkg/project_manager.py",
+                "name": "get_project_files",
+                "qualified_name": "pkg.project_manager.ProjectManager.get_project_files",
+                "semantic": {"calls": ["write_file"]},
+            },
+            {
+                "file_path": "pkg/project_manager.py",
+                "name": "project_dir",
+                "qualified_name": "pkg.project_manager.ProjectManager.project_dir",
+                "semantic": {"calls": []},
+            },
+        ]
+
+        refinement = _refine_module_domains_from_entities(file_domains, decisions, full_entities)
+
+        assert file_domains["pkg/project_manager.py"] == "fs"
+        assert refinement["summary"]["upgraded_misc"] == 1
+        assert refinement["log"][0]["action"] == "upgrade"
+
+    def test_retags_weak_module_when_entity_votes_are_clear(self):
+        file_domains = {"pkg/blog.py": "http"}
+        decisions = {
+            "pkg/blog.py": DomainDecision("http", "category_hint", "weak")
+        }
+        full_entities = [
+            {
+                "file_path": "pkg/blog.py",
+                "name": "save_file",
+                "qualified_name": "pkg.blog.Blog.save_file",
+                "semantic": {"calls": ["write_file"]},
+            },
+            {
+                "file_path": "pkg/blog.py",
+                "name": "get_project_files",
+                "qualified_name": "pkg.blog.Blog.get_project_files",
+                "semantic": {"calls": ["read_path"]},
+            },
+            {
+                "file_path": "pkg/blog.py",
+                "name": "project_dir",
+                "qualified_name": "pkg.blog.Blog.project_dir",
+                "semantic": {"calls": []},
+            },
+        ]
+
+        refinement = _refine_module_domains_from_entities(file_domains, decisions, full_entities)
+
+        assert file_domains["pkg/blog.py"] == "fs"
+        assert refinement["summary"]["retagged_weak"] == 1
+        assert refinement["log"][0]["action"] == "retag"
+
+    def test_logs_disagreement_for_strong_module_without_overriding(self):
+        file_domains = {"pkg/http_helpers.py": "http"}
+        decisions = {
+            "pkg/http_helpers.py": DomainDecision("http", "strong_import", "strong")
+        }
+        full_entities = [
+            {
+                "file_path": "pkg/http_helpers.py",
+                "name": "save_file",
+                "qualified_name": "pkg.http_helpers.save_file",
+                "semantic": {"calls": ["write_file"]},
+            },
+            {
+                "file_path": "pkg/http_helpers.py",
+                "name": "get_project_files",
+                "qualified_name": "pkg.http_helpers.get_project_files",
+                "semantic": {"calls": ["read_path"]},
+            },
+            {
+                "file_path": "pkg/http_helpers.py",
+                "name": "project_dir",
+                "qualified_name": "pkg.http_helpers.project_dir",
+                "semantic": {"calls": []},
+            },
+        ]
+
+        refinement = _refine_module_domains_from_entities(file_domains, decisions, full_entities)
+
+        assert file_domains["pkg/http_helpers.py"] == "http"
+        assert refinement["summary"]["strong_disagreements"] == 1
+        assert refinement["log"][0]["action"] == "log_disagreement"
+
+    def test_fs_rollup_requires_extra_consensus(self):
+        file_domains = {"pkg/renderers.py": "misc"}
+        decisions = {
+            "pkg/renderers.py": DomainDecision("misc", "no_signal", "unresolved")
+        }
+        full_entities = [
+            {
+                "file_path": "pkg/renderers.py",
+                "name": "save_file",
+                "qualified_name": "pkg.renderers.Renderer.save_file",
+                "semantic": {"calls": ["write_file"]},
+            },
+            {
+                "file_path": "pkg/renderers.py",
+                "name": "get_binary_file",
+                "qualified_name": "pkg.renderers.Renderer.get_binary_file",
+                "semantic": {"calls": []},
+            },
+        ]
+
+        refinement = _refine_module_domains_from_entities(file_domains, decisions, full_entities)
+
+        assert file_domains["pkg/renderers.py"] == "misc"
+        assert refinement["summary"]["upgraded_misc"] == 0
+        assert refinement["summary"]["log_entries"] == 0
+
+    def test_fs_rollup_still_upgrades_when_consensus_is_strong(self):
+        file_domains = {"pkg/project_files.py": "misc"}
+        decisions = {
+            "pkg/project_files.py": DomainDecision("misc", "no_signal", "unresolved")
+        }
+        full_entities = [
+            {
+                "file_path": "pkg/project_files.py",
+                "name": "save_file_to_project",
+                "qualified_name": "pkg.project_files.Manager.save_file_to_project",
+                "semantic": {"calls": ["write_file"]},
+            },
+            {
+                "file_path": "pkg/project_files.py",
+                "name": "get_project_files",
+                "qualified_name": "pkg.project_files.Manager.get_project_files",
+                "semantic": {"calls": ["read_path"]},
+            },
+            {
+                "file_path": "pkg/project_files.py",
+                "name": "project_dir",
+                "qualified_name": "pkg.project_files.Manager.project_dir",
+                "semantic": {"calls": []},
+            },
+        ]
+
+        refinement = _refine_module_domains_from_entities(file_domains, decisions, full_entities)
+
+        assert file_domains["pkg/project_files.py"] == "fs"
+        assert refinement["summary"]["upgraded_misc"] == 1

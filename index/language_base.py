@@ -68,6 +68,10 @@ class LanguageFrontend(Protocol):
         """Find internal package/crate roots for import resolution."""
         ...
 
+    def module_scope(self, file_path: Path, repo_path: Optional[Path] = None) -> List[str]:
+        """Infer the dotted module scope for a source file."""
+        ...
+
     def split_imports(
         self,
         all_imports: Sequence[str],
@@ -82,7 +86,14 @@ class LanguageFrontend(Protocol):
         """Assign a category (core_logic, tests, config, etc.) to a file."""
         ...
 
-    def classify_domain(self, file_path: Path, tree: Any) -> str:
+    def classify_domain(
+        self,
+        file_path: Path,
+        tree: Any,
+        *,
+        category: Optional[str] = None,
+        internal_roots: Optional[set[str]] = None,
+    ) -> str:
         """Assign a domain tag to a file based on content heuristics."""
         ...
 

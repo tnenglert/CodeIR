@@ -50,3 +50,39 @@ def test_cmd_trace_returns_zero_hop_for_same_entity(tmp_path, capsys):
     assert "AAA              pkg.alpha" in out
     assert "alpha.py:10" in out
     assert "No call path found" not in out
+
+
+def test_cmd_trace_warns_when_callers_graph_is_stale(tmp_path, capsys):
+    repo_path = tmp_path
+    codeir_dir = repo_path / ".codeir"
+    codeir_dir.mkdir()
+    db_path = codeir_dir / "entities.db"
+    _create_trace_db(db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.executemany(
+        "INSERT INTO index_meta (key, value) VALUES (?, ?)",
+        [
+            ("callers_status", "stale"),
+            ("callers_built_at", "2026-04-07T12:00:00+00:00"),
+            ("callers_error", "boom"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    args = Namespace(
+        from_entity="AAA",
+        to_entity="AAA",
+        repo_path=repo_path,
+        depth=10,
+        resolution="any",
+    )
+
+    cli.cmd_trace(args)
+    out = capsys.readouterr().out
+
+    assert "Warning: caller graph may be stale" in out
+    assert "Last successful caller rebuild: 2026-04-07T12:00:00+00:00" in out
+    assert "Last caller rebuild error: boom" in out
