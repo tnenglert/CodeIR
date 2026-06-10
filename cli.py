@@ -18,7 +18,6 @@ Commands:
   patterns     — List detected structural patterns (base-class clusters ≥30 entities)
   rules        — Generate .claude/rules/CodeIR.md agent instructions with repo-specific examples
   eval         — Evaluate compression levels side-by-side
-  floor-test   — Comprehensibility floor testing (generate/score)
   benchmark    — One-shot report: coverage, taxonomy, compression, worked example
 """
 
@@ -480,21 +479,6 @@ def build_parser() -> argparse.ArgumentParser:
         "repo_path", type=Path, nargs="?", default=None,
         help="Repository path (default: current directory)",
     )
-
-    # floor-test
-    p_floor = sub.add_parser("floor-test", help="Comprehensibility floor testing")
-    floor_sub = p_floor.add_subparsers(dest="floor_action", required=True)
-
-    p_floor_gen = floor_sub.add_parser("generate", help="Generate test pack")
-    p_floor_gen.add_argument("repo_path", type=Path)
-    p_floor_gen.add_argument("--level", default="Behavior", help="Compression level for test pack")
-    p_floor_gen.add_argument("--count", type=int, default=15, help="Number of test entities")
-    p_floor_gen.add_argument("--seed", type=int, default=42, help="Random seed for entity selection")
-    p_floor_gen.add_argument("--output", type=Path, default=None, help="Output JSON path")
-
-    p_floor_score = floor_sub.add_parser("score", help="Score test results and produce floor report")
-    p_floor_score.add_argument("results_path", type=Path, help="Path to scored results JSON")
-    p_floor_score.add_argument("--output", type=Path, default=None, help="Output floor report path")
 
     return parser
 
@@ -2347,34 +2331,6 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     print(run_benchmark(repo_path))
 
 
-def cmd_floor_test(args: argparse.Namespace) -> None:
-    if args.floor_action == "generate":
-        from tests.eval.floor_test import generate_test_pack
-
-        repo_path = args.repo_path.resolve()
-        pack = generate_test_pack(
-            repo_path=repo_path,
-            compression_level=args.level,
-            entity_count=args.count,
-            seed=args.seed,
-        )
-        output = args.output or Path(f"floor_test_pack_{args.level}.json")
-        output.write_text(json.dumps(pack, indent=2), encoding="utf-8")
-        print(f"Generated {len(pack['tests'])} tests for {pack['entity_count']} entities at {pack['level']}")
-        print(f"Output: {output}")
-
-    elif args.floor_action == "score":
-        from tests.eval.eval import floor_report, render_floor_matrix_markdown
-
-        report = floor_report(args.results_path)
-        md = render_floor_matrix_markdown(report)
-        print(md)
-
-        if args.output:
-            args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print(f"\nFloor report written to {args.output}")
-
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -2401,7 +2357,6 @@ def main() -> None:
         "patterns": cmd_patterns,
         "rules": cmd_rules,
         "eval": cmd_eval,
-        "floor-test": cmd_floor_test,
         "benchmark": cmd_benchmark,
     }
 
