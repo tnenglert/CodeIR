@@ -9,7 +9,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Arbitrary minimum tuned to surface only high-confidence structural patterns;
 # calibrate per repo if your inheritance/trait families are smaller or larger.

@@ -8,7 +8,6 @@ from typing import Dict, Iterable, Optional
 from ir.stable_ids import compact_stem
 from ir.token_count import count_tokens
 
-
 CORE_MAP: Dict[str, str] = {
     "user": "USR",
     "profile": "PROF",

@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from index.languages import get_frontend_for_file
 from index.db.db import connect
+from index.languages import get_frontend_for_file
 
 # Arbitrary ambiguity cap tuned to keep fuzzy caller edges useful without
 # flooding the graph; calibrate per repo if names are more or less repetitive.

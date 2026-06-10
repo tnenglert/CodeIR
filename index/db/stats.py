@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
 
-from index.db.db import connect, table_exists, column_names
+from index.db.db import column_names, connect, table_exists
 from ir.classifier import DOMAIN_MISC, DOMAIN_UNKNOWN, classify_file_with_stage
 
 

@@ -1,13 +1,11 @@
 """Tests for core indexer logic: ID assignment, change detection, compression level resolution."""
 
 import sqlite3
-import tempfile
-from pathlib import Path
-
-import pytest
 
 from index.indexer import (
     _assign_entity_ids,
+    _collect_existing_ids_by_base,
+    _detect_changes,
     _entity_base_from_id,
     _next_entity_id,
     _primary_language,
@@ -15,11 +13,8 @@ from index.indexer import (
     index_repo,
     map_legacy_mode_to_level,
     resolve_compression_level,
-    _detect_changes,
-    _collect_existing_ids_by_base,
 )
 from ir.classifier import DomainDecision
-
 
 # ---------------------------------------------------------------------------
 # _entity_base_from_id

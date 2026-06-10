@@ -5,11 +5,9 @@ from __future__ import annotations
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from index.db.db import connect
-from ir.compressor import kind_to_opcode
-
 
 # ---------------------------------------------------------------------------
 # IR text parsing

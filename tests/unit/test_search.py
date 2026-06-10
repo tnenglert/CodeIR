@@ -1,19 +1,18 @@
 """Tests for search, grep, impact, and scope logic."""
 
 import sqlite3
-import tempfile
 from pathlib import Path
 
 import pytest
 
+from index.db.db import connect, ensure_store
 from index.search import (
     _build_match_entry,
     compute_impact,
     compute_scope,
-    search_entities,
     grep_entities,
+    search_entities,
 )
-from index.db.db import connect, ensure_store
 
 
 def _make_test_store(tmp_path):

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
 try:
-    from tree_sitter import Language, Node, Parser, Tree
     import tree_sitter_typescript
+    from tree_sitter import Language, Node, Parser, Tree
 except ImportError:  # pragma: no cover - exercised in packaging tests
     Language = None  # type: ignore[assignment]
     Node = object  # type: ignore[assignment,misc]

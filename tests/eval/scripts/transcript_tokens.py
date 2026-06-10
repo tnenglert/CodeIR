@@ -93,7 +93,7 @@ def print_stats(path: Path, stats: TokenStats, breakdown: bool = False) -> None:
     print(f"  API calls:      {stats.api_calls}")
 
     if breakdown:
-        print(f"\n  Breakdown:")
+        print("\n  Breakdown:")
         print(f"    input_tokens:          {format_tokens(stats.input_tokens)}")
         print(f"    cache_read_tokens:     {format_tokens(stats.cache_read_tokens)}")
         print(f"    cache_creation_tokens: {format_tokens(stats.cache_creation_tokens)}")

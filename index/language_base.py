@@ -9,9 +9,7 @@ mypy against this protocol — they do not need to subclass it at runtime.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, runtime_checkable
-
-from typing import Protocol
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 
 @runtime_checkable

@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from index.locator import extract_code_slice
 from ir.stable_ids import make_pattern_id
 from ir.token_count import count_tokens
-from index.locator import extract_code_slice
 
 VALID_LEVELS = {"Source", "Behavior", "Index", "all", "Behavior+Index"}
 # Arbitrary default tuned to keep tiny entities uncompressed; calibrate if your

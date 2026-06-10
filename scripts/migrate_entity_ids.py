@@ -8,7 +8,6 @@ The type prefix is removed (it's redundant with the row's type field).
 Underscores in suffixes become dots.
 """
 
-import json
 import re
 import sqlite3
 from pathlib import Path

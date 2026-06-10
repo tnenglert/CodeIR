@@ -15,7 +15,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
 ENTITY_RE = re.compile(r"\b([A-Z]{2,}(?:\.[A-Z0-9]+)?(?:\.\d{2})?)\b")
 INSPECTION_COMMANDS = {"show", "expand", "scope", "callers", "impact", "trace"}
 FLAGS_WITH_VALUES = {

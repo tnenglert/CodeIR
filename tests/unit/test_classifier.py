@@ -1,8 +1,8 @@
 """Tests for file classification."""
 
-import pytest
 from pathlib import Path
-from ir.classifier import _classify_by_filename, _classify_by_directory, classify_domain
+
+from ir.classifier import _classify_by_directory, _classify_by_filename, classify_domain
 
 
 class TestClassifyByFilename:

@@ -2,8 +2,6 @@
 
 import sqlite3
 
-import pytest
-
 from index.mapping import load_abbreviation_maps, save_abbreviation_maps
 
 

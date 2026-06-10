@@ -1,7 +1,13 @@
 """Tests for stable ID generation."""
 
-import pytest
-from ir.stable_ids import compact_stem, make_entity_base_id, make_module_base_id, make_stable_id, parse_stable_id, type_prefix_for_kind
+from ir.stable_ids import (
+    compact_stem,
+    make_entity_base_id,
+    make_module_base_id,
+    make_stable_id,
+    parse_stable_id,
+    type_prefix_for_kind,
+)
 
 
 class TestCompactStem:

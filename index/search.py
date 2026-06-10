@@ -10,7 +10,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from index.db.db import connect, column_names
+from index.db.db import column_names, connect
 
 
 def _normalize_grep_pattern(pattern: str) -> str:

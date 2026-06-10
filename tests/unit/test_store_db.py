@@ -1,10 +1,7 @@
 """Tests for database connection, schema bootstrap, and migrations."""
 
 import sqlite3
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from index.db.db import (
     _connect_immutable,
@@ -14,9 +11,9 @@ from index.db.db import (
     _ensure_entities_migrations,
     _ensure_file_metadata_table,
     _ensure_index_meta_table,
-    _ensure_modules_domain_column,
     _ensure_ir_rows_composite_pk,
     _ensure_modules_deps_column,
+    _ensure_modules_domain_column,
     _ensure_modules_table,
     column_names,
     connect,
@@ -25,7 +22,6 @@ from index.db.db import (
     load_schema,
     table_exists,
 )
-
 
 # ---------------------------------------------------------------------------
 # connect

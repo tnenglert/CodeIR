@@ -7,15 +7,9 @@ from pathlib import Path
 import pytest
 
 from ir.classifier import (
+    _DOMAIN_THRESHOLD,
     DOMAINS,
     _DomainVisitor,
-    _DOMAIN_FILE_PATTERNS,
-    _DOMAIN_IMPORTS_STRONG,
-    _DOMAIN_IMPORTS_WEAK,
-    _DOMAIN_SUBMODULE_STRONG,
-    _STRONG_SIGNAL_SCORE,
-    _WEAK_SIGNAL_SCORE,
-    _DOMAIN_THRESHOLD,
     classify_domain,
     classify_domain_decision,
     infer_entity_domain_scores,

@@ -1,13 +1,8 @@
 """Tests for file hashing and code slicing."""
 
 import hashlib
-import tempfile
-from pathlib import Path
-
-import pytest
 
 from index.locator import compute_file_content_hash, extract_code_slice
-
 
 # ---------------------------------------------------------------------------
 # compute_file_content_hash

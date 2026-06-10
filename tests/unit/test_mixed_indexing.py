@@ -10,9 +10,9 @@ import pytest
 pytest.importorskip("tree_sitter_rust")
 pytest.importorskip("tree_sitter_typescript")
 
-from index.indexer import index_repo
 from index.db.db import connect
 from index.db.stats import get_stats
+from index.indexer import index_repo
 
 
 def _entity_id_by_qualified_name(conn, qualified_name: str) -> str:

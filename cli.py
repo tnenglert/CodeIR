@@ -25,25 +25,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from index.indexer import index_repo, map_legacy_mode_to_level
-from index.locator import extract_code_slice
-from index.search import compute_impact, compute_scope, grep_entities, search_entities
 from index.db.db import column_names, connect
 from index.db.fetch import get_entities_by_pattern, get_entity_all_levels, get_entity_location, get_entity_with_ir
 from index.db.stats import get_stats
-
+from index.indexer import index_repo, map_legacy_mode_to_level
+from index.locator import extract_code_slice
+from index.search import compute_impact, compute_scope, grep_entities, search_entities
 
 # Pattern feature toggle - set to False for vanilla CodeIR testing
 PATTERNS_ENABLED = True
 
 # Default truncation limit for entity lists (callers, impact, scope)
 # Override with CODEIR_LIST_LIMIT environment variable
-import os
 DEFAULT_LIST_LIMIT = int(os.environ.get("CODEIR_LIST_LIMIT", "15"))
 
 
@@ -490,8 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_init(args: argparse.Namespace) -> None:
     """Full setup: index a repository, then generate bearings and platform instructions."""
     from ir.init import (
-        find_repo_root, generate_instructions, print_detection_help,
-        select_platforms, ALL_PLATFORMS,
+        find_repo_root,
+        generate_instructions,
+        print_detection_help,
+        select_platforms,
     )
 
     def _platform_names(platforms: list) -> str:
@@ -593,7 +594,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     module_ids = _compute_module_ids(modules)
 
-    from ir.classifier import generate_context_file, generate_summary, generate_category_file
+    from ir.classifier import generate_category_file, generate_context_file, generate_summary
 
     bearings_paths = _get_bearings_paths(repo_path)
     bearings_paths["base"].mkdir(parents=True, exist_ok=True)
@@ -1111,7 +1112,7 @@ def cmd_show(args: argparse.Namespace) -> None:
                 pattern_details.missing_calls
             )
             if has_deviations:
-                print(f"\nDeviations:")
+                print("\nDeviations:")
                 if pattern_details.extra_calls:
                     print(f"  Extra calls: {', '.join(pattern_details.extra_calls)}")
                 if pattern_details.extra_flags:
@@ -1119,7 +1120,7 @@ def cmd_show(args: argparse.Namespace) -> None:
                 if pattern_details.missing_calls:
                     print(f"  Missing calls: {', '.join(pattern_details.missing_calls)}")
             else:
-                print(f"\nDeviations: none (fully standard)")
+                print("\nDeviations: none (fully standard)")
 
             print(f"\nFull IR: codeir show {entity_id} --full")
         else:
@@ -1402,19 +1403,18 @@ def cmd_callers(args: argparse.Namespace) -> None:
         print(f"\n⚠ Ambiguous calls ({len(ambiguous_rows)} potential callers, {name_count} entities named '{entity_name}'):")
         for row in ambiguous_rows[:5]:  # Show top 5
             # Extract the matching call from calls_json
-            import json
             try:
                 calls = json.loads(row["calls_json"])
                 matching = [c for c in calls if c.endswith(f".{entity_name}")]
                 call_str = matching[0] if matching else entity_name
-            except:
+            except Exception:
                 call_str = entity_name
             print(f"   {row['id']:20s}  calls {call_str:30s}  {row['file_path']}")
 
         if len(ambiguous_rows) > 5:
             print(f"   ... and {len(ambiguous_rows) - 5} more")
 
-        print(f"\n💡 Suggestions:")
+        print("\n💡 Suggestions:")
         print(f"   codeir grep '\\.{entity_name}\\(' --path <dir>")
         print(f"   codeir grep '{entity_name}\\(' --path <relevant_dir>")
 
@@ -1676,22 +1676,17 @@ def cmd_trace(args: argparse.Namespace) -> None:
     # Build resolution filter clause
     if resolution_filter == "any":
         res_clause = ""
-        res_params = []
     elif resolution_filter == "fuzzy":
         # Include all resolutions (fuzzy is lowest confidence, so include everything)
         res_clause = ""
-        res_params = []
     elif resolution_filter == "local":
         # Include local and import (exclude fuzzy)
         res_clause = " AND resolution IN ('local', 'import')"
-        res_params = []
     elif resolution_filter == "import":
         # Only import resolution
         res_clause = " AND resolution = 'import'"
-        res_params = []
     else:
         res_clause = ""
-        res_params = []
 
     # BFS to find shortest path
     # Forward edges: SELECT entity_id FROM callers WHERE caller_id = ?
@@ -1715,7 +1710,6 @@ def cmd_trace(args: argparse.Namespace) -> None:
 
         for row in callees:
             callee_id = row["entity_id"]
-            resolution = row["resolution"]
 
             if callee_id == to_id:
                 found_path = path + [callee_id]
@@ -2107,7 +2101,7 @@ def _generate_bearings_files(repo_path: Path) -> None:
 
     module_ids = _compute_module_ids(modules)
 
-    from ir.classifier import generate_context_file, generate_summary, generate_category_file
+    from ir.classifier import generate_category_file, generate_context_file, generate_summary
 
     paths = _get_bearings_paths(repo_path)
     paths["base"].mkdir(parents=True, exist_ok=True)
@@ -2193,13 +2187,13 @@ def cmd_bearings(args: argparse.Namespace) -> None:
 
     # Build menu with token estimates
     full_tokens = _estimate_tokens(bearings_path)
-    print(f"---")
+    print("---")
     print(f"Full bearings: `codeir bearings --full` (~{full_tokens:,} tokens)")
 
     if bearings_dir.exists():
         cat_files = sorted(bearings_dir.glob("*.md"))
         if cat_files:
-            print(f"\nBy category:")
+            print("\nBy category:")
             for cat_path in cat_files:
                 cat_tokens = _estimate_tokens(cat_path)
                 print(f"  {cat_path.stem:15s}  `codeir bearings {cat_path.stem}` (~{cat_tokens:,} tokens)")

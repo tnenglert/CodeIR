@@ -7,8 +7,13 @@ from pathlib import Path
 import pytest
 
 from index.pattern_detector import (
-    Pattern, PatternMember, PatternDetails, detect_patterns, get_patterns,
-    get_entity_pattern, get_entity_pattern_details, _ensure_pattern_tables,
+    Pattern,
+    PatternDetails,
+    _ensure_pattern_tables,
+    detect_patterns,
+    get_entity_pattern,
+    get_entity_pattern_details,
+    get_patterns,
 )
 
 

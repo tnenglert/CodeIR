@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Mapping, Optional, Tuple
 
-
 # ---------------------------------------------------------------------------
 # Shared instruction content
 # ---------------------------------------------------------------------------

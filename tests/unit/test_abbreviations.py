@@ -1,15 +1,12 @@
 """Tests for abbreviation map generation."""
 
-import pytest
 
 from ir.abbreviations import (
-    CORE_MAP,
     _next_index,
     _shorter_token,
     _token,
     build_abbreviation_maps,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

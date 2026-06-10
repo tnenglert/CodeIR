@@ -8,9 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+from index.db.fetch import get_entity_location, get_entity_with_ir
 from index.locator import extract_code_slice
 from index.search import search_entities as _search_entities
-from index.db.fetch import get_entity_location, get_entity_with_ir
 
 
 def _repo_path(repo_path: str | Path = ".") -> Path:

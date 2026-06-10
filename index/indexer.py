@@ -17,6 +17,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from index.callers import build_callers_table
+from index.db.db import connect, ensure_store
+from index.languages import get_frontend_for_file, resolve_frontend_config
+from index.locator import (
+    compute_file_content_hash,
+    discover_source_files,
+    extract_code_slice,
+)
+from index.mapping import load_abbreviation_maps, save_abbreviation_maps
 from ir.abbreviations import build_abbreviation_maps
 from ir.classifier import (
     DomainDecision,
@@ -28,16 +37,6 @@ from ir.classifier import (
 from ir.compressor import build_ir_rows
 from ir.stable_ids import make_entity_base_id
 from ir.token_count import count_tokens
-from index.languages import get_frontend_for_file, resolve_frontend_config
-from index.locator import (
-    compute_file_content_hash,
-    discover_source_files,
-    extract_code_slice,
-)
-from index.callers import build_callers_table
-from index.mapping import load_abbreviation_maps, save_abbreviation_maps
-from index.db.db import connect, ensure_store
-
 
 # ---------------------------------------------------------------------------
 # Entity ID assignment

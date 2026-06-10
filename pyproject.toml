@@ -8,18 +8,18 @@ version = "0.2.0"
 description = "Deterministic code compression and indexing for Python repositories"
 readme = "docs/Rationale.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["code-analysis", "ir", "indexing", "compression", "llm", "agents"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Software Development :: Compilers",
 ]
@@ -43,6 +43,7 @@ eval = [
 ]
 test = [
     "pytest",
+    "ruff",
     "tree-sitter",
     "tree-sitter-rust",
     "tree-sitter-typescript",
@@ -60,3 +61,15 @@ py-modules = ["cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# Defaults (E4/E7/E9/F) plus import sorting. Expand deliberately, not by default.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests insert the repo root on sys.path before importing cli/ir/index.
+"tests/**" = ["E402"]

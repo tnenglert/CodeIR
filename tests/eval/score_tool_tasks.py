@@ -23,7 +23,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Tuple
 
 
 def load_task_pack(path: Path) -> Dict:
@@ -251,7 +251,6 @@ def score_search_failure(task: Dict, response: Dict) -> Tuple[int, Dict]:
     total = 0
 
     answer = response.get("answer", "")
-    tool_calls = response.get("tool_calls", [])
     entities_mentioned = response.get("entities_mentioned", [])
     if not entities_mentioned:
         entities_mentioned = extract_entities_from_text(answer)
@@ -379,7 +378,7 @@ def main():
     }
 
     print(f"\n{'='*60}")
-    print(f"Summary by Type:")
+    print("Summary by Type:")
     print(f"{'='*60}")
     for task_type, data in results["by_type"].items():
         pct = (data["score"] / data["max"] * 100) if data["max"] > 0 else 0

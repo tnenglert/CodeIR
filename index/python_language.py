@@ -9,7 +9,6 @@ from typing import Dict, List, Optional
 from ir.classifier import classify_domain as classify_python_domain
 from ir.classifier import classify_file as classify_python_file
 
-
 PYTHON_CALL_STOPLIST = {
     "len", "range", "print", "str", "int", "float", "bool", "list", "dict",
     "set", "tuple", "type", "isinstance", "issubclass", "hasattr", "getattr",

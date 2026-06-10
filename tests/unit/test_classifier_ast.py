@@ -3,13 +3,11 @@
 import ast
 from pathlib import Path
 
-import pytest
-
 from ir.classifier import (
-    _classify_by_ast,
-    _ClassificationVisitor,
-    _DomainVisitor,
     _DOMAIN_THRESHOLD,
+    _ClassificationVisitor,
+    _classify_by_ast,
+    _DomainVisitor,
     classify_domain,
     classify_file,
     to_module_ir_line,

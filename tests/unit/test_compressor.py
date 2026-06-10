@@ -1,6 +1,5 @@
 """Tests for IR compression and format conformance."""
 
-import pytest
 from ir.compressor import _build_behavior, _build_index, kind_to_opcode
 
 

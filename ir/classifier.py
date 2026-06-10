@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-
 CATEGORIES = (
     "core_logic",
     "router",
@@ -1040,7 +1039,6 @@ def _collapse_patterns(
         if len(group) > PATTERN_COLLAPSE_TRIGGER:
             # Collapse this pattern
             total_ents = sum(int(m.get("entity_count", 0)) for m in group)
-            nonzero_count = len(nonzero)
             zero_count = len(zero)
 
             parts = [f"{fname} ×{len(group)}"]

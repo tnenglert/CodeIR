@@ -1,10 +1,8 @@
 """Tests for the search caller-count A/B benchmark scorer."""
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tests" / "eval" / "score_search_callers_ab.py"

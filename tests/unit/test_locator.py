@@ -1,8 +1,8 @@
 """Tests for entity extraction via the Python language frontend."""
 
 import tempfile
-import pytest
 from pathlib import Path
+
 from index.languages import get_frontend_for_file
 
 

@@ -3,8 +3,6 @@
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from index.callers import (
     FUZZY_MATCH_LIMIT,
     _matching_entities,

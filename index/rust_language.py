@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 try:
-    from tree_sitter import Language, Node, Parser, Tree
     import tree_sitter_rust
+    from tree_sitter import Language, Node, Parser, Tree
 except ImportError:  # pragma: no cover - exercised when optional deps are missing
     Language = None  # type: ignore[assignment]
     Node = object  # type: ignore[assignment,misc]
@@ -211,7 +211,6 @@ class RustFrontend:
     def build_import_map(self, tree: ParsedRustFile, file_path: Path, repo_path: Path) -> Dict[str, str]:
         internal_roots = self.discover_internal_roots(repo_path)
         module_scope = self.module_scope(file_path, repo_path)
-        current_module = list(module_scope)
         current_file_module = list(module_scope)
 
         if file_path.name == "mod.rs" and current_file_module:

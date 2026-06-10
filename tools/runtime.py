@@ -234,7 +234,7 @@ def _handle_callers(args: Dict[str, Any], repo_path: Optional[str]) -> Dict[str,
 
     # Extract resolved callers (before ambiguous section)
     caller_end = ambiguous_start if ambiguous_start else len(lines)
-    caller_lines = [l for l in lines[:caller_end] if l.strip() and not l.startswith("No callers")]
+    caller_lines = [ln for ln in lines[:caller_end] if ln.strip() and not ln.startswith("No callers")]
 
     # Extract ambiguous info
     if ambiguous_start and suggestions_start:

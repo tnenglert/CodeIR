@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from index.db.db import connect
-from ir.classifier import CATEGORIES, DOMAINS, classify_file_with_stage
-from ir.rules_generator import annotate_behavior_ir, parse_behavior_ir
+from ir.classifier import classify_file_with_stage
+from ir.rules_generator import parse_behavior_ir
 from ir.token_count import count_tokens
 
 _DIVIDER = "─" * 80
@@ -472,8 +472,9 @@ def run_benchmark(repo_path: Path) -> str:
 
     if not entities_db.exists():
         # Need to index first
-        from index.indexer import index_repo
         import sys
+
+        from index.indexer import index_repo
         cfg: Dict[str, Any] = {
             "hidden_dirs": [".git", ".venv", "venv", "__pycache__", ".mypy_cache",
                             ".pytest_cache", ".codeir"],
@@ -489,7 +490,6 @@ def run_benchmark(repo_path: Path) -> str:
         elapsed = None
 
     if not entities_db.exists():
-        parts = repo_path.suffix.lower() if repo_path.suffix else ""
         return (
             f"No entities found in {repo_path}.\n"
             "Supported languages: Python (.py), Rust (.rs), TypeScript (.ts/.tsx).\n"
