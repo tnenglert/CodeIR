@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 import cli
 
 
-def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsys, tmp_path):
+def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsys, indexed_repo):
     captured = {}
 
     def fake_grep_entities(**kwargs):
@@ -39,7 +39,7 @@ def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsy
 
     args = Namespace(
         pattern="alpha|beta",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,
@@ -67,7 +67,7 @@ def test_cmd_grep_evidence_sets_default_context_and_prints_ir(monkeypatch, capsy
     assert "... 1 more matches in this entity" in out
 
 
-def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
+def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, indexed_repo):
     captured = {}
 
     def fake_grep_entities(**kwargs):
@@ -78,7 +78,7 @@ def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
 
     args = Namespace(
         pattern="alpha",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,
@@ -99,7 +99,7 @@ def test_cmd_grep_evidence_preserves_explicit_context(monkeypatch, tmp_path):
     assert captured["after_context"] == 1
 
 
-def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path):
+def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, indexed_repo):
     def fake_grep_entities(**kwargs):
         return [
             {
@@ -128,7 +128,7 @@ def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path
 
     args = Namespace(
         pattern="alpha",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,
@@ -153,7 +153,7 @@ def test_cmd_grep_count_outputs_counts_only_sorted(monkeypatch, capsys, tmp_path
     assert "12:" not in out
 
 
-def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
+def test_cmd_grep_passes_multiple_paths(monkeypatch, indexed_repo):
     captured = {}
 
     def fake_grep_entities(**kwargs):
@@ -164,7 +164,7 @@ def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
 
     args = Namespace(
         pattern="alpha",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,
@@ -184,7 +184,7 @@ def test_cmd_grep_passes_multiple_paths(monkeypatch, tmp_path):
     assert captured["path_filter"] == ["lib", "test", "docs/*.rst"]
 
 
-def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
+def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, indexed_repo):
     captured = {}
 
     def fake_grep_entities(**kwargs):
@@ -195,7 +195,7 @@ def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
 
     args = Namespace(
         pattern=r"alpha\|beta",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,
@@ -215,7 +215,7 @@ def test_cmd_grep_passes_escaped_pipe_pattern_through(monkeypatch, tmp_path):
     assert captured["pattern"] == r"alpha\|beta"
 
 
-def test_cmd_grep_supports_before_after_context_and_category(monkeypatch, tmp_path):
+def test_cmd_grep_supports_before_after_context_and_category(monkeypatch, indexed_repo):
     captured = {}
 
     def fake_grep_entities(**kwargs):
@@ -226,7 +226,7 @@ def test_cmd_grep_supports_before_after_context_and_category(monkeypatch, tmp_pa
 
     args = Namespace(
         pattern="alpha",
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         limit=50,
         ignore_case=False,

@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 import cli
 
 
-def test_cmd_expand_numbered_output(monkeypatch, capsys, tmp_path):
+def test_cmd_expand_numbered_output(monkeypatch, capsys, indexed_repo):
     monkeypatch.setattr(
         cli,
         "get_entity_location",
@@ -32,7 +32,7 @@ def test_cmd_expand_numbered_output(monkeypatch, capsys, tmp_path):
 
     args = Namespace(
         entity_ids=["AAA"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=None,
         number=True,
     )
@@ -47,7 +47,7 @@ def test_cmd_expand_numbered_output(monkeypatch, capsys, tmp_path):
     assert "12: third()" in out
 
 
-def test_cmd_expand_limit_truncates_lines(monkeypatch, capsys, tmp_path):
+def test_cmd_expand_limit_truncates_lines(monkeypatch, capsys, indexed_repo):
     monkeypatch.setattr(
         cli,
         "get_entity_location",
@@ -68,7 +68,7 @@ def test_cmd_expand_limit_truncates_lines(monkeypatch, capsys, tmp_path):
 
     args = Namespace(
         entity_ids=["AAA"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=2,
         number=False,
     )

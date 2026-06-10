@@ -16,7 +16,7 @@ class _DummyConn:
         return None
 
 
-def test_cmd_search_suggests_removing_category_when_unfiltered_matches_exist(monkeypatch, capsys, tmp_path):
+def test_cmd_search_suggests_removing_category_when_unfiltered_matches_exist(monkeypatch, capsys, indexed_repo):
     calls = []
 
     def fake_search_entities(**kwargs):
@@ -38,7 +38,7 @@ def test_cmd_search_suggests_removing_category_when_unfiltered_matches_exist(mon
 
     args = Namespace(
         query=["ReportAgent"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=50,
         category="core_logic",
         patterns=False,
@@ -55,7 +55,7 @@ def test_cmd_search_suggests_removing_category_when_unfiltered_matches_exist(mon
     assert "Try removing --category" in out
 
 
-def test_cmd_search_falls_back_to_grep_message_when_no_matches_anywhere(monkeypatch, capsys, tmp_path):
+def test_cmd_search_falls_back_to_grep_message_when_no_matches_anywhere(monkeypatch, capsys, indexed_repo):
     calls = []
 
     def fake_search_entities(**kwargs):
@@ -66,7 +66,7 @@ def test_cmd_search_falls_back_to_grep_message_when_no_matches_anywhere(monkeypa
 
     args = Namespace(
         query=["ReportAgent"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=50,
         category="core_logic",
         patterns=False,
@@ -81,7 +81,7 @@ def test_cmd_search_falls_back_to_grep_message_when_no_matches_anywhere(monkeypa
     assert "No entities found. Try: codeir grep \"ReportAgent\" to search file contents." in out
 
 
-def test_cmd_search_without_category_keeps_original_empty_state(monkeypatch, capsys, tmp_path):
+def test_cmd_search_without_category_keeps_original_empty_state(monkeypatch, capsys, indexed_repo):
     calls = []
 
     def fake_search_entities(**kwargs):
@@ -92,7 +92,7 @@ def test_cmd_search_without_category_keeps_original_empty_state(monkeypatch, cap
 
     args = Namespace(
         query=["ReportAgent"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=50,
         category=None,
         patterns=False,
@@ -106,11 +106,7 @@ def test_cmd_search_without_category_keeps_original_empty_state(monkeypatch, cap
     assert "No entities found. Try: codeir grep \"ReportAgent\" to search file contents." in out
 
 
-def test_cmd_search_prints_callers_count(monkeypatch, capsys, tmp_path):
-    codeir_dir = tmp_path / ".codeir"
-    codeir_dir.mkdir()
-    (codeir_dir / "entities.db").write_text("")
-
+def test_cmd_search_prints_callers_count(monkeypatch, capsys, indexed_repo):
     monkeypatch.setattr(
         cli,
         "search_entities",
@@ -136,7 +132,7 @@ def test_cmd_search_prints_callers_count(monkeypatch, capsys, tmp_path):
 
     args = Namespace(
         query=["ReportAgent"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         limit=50,
         category=None,
         patterns=False,

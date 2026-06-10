@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 import cli
 
 
-def test_cmd_stats_prints_classification_quality(monkeypatch, capsys, tmp_path):
+def test_cmd_stats_prints_classification_quality(monkeypatch, capsys, indexed_repo):
     monkeypatch.setattr(
         cli,
         "get_stats",
@@ -51,7 +51,7 @@ def test_cmd_stats_prints_classification_quality(monkeypatch, capsys, tmp_path):
         },
     )
 
-    cli.cmd_stats(Namespace(repo_path=tmp_path))
+    cli.cmd_stats(Namespace(repo_path=indexed_repo))
     out = capsys.readouterr().out
 
     assert "Classification quality:" in out

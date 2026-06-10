@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 import cli
 
 
-def test_cmd_show_supports_multiple_entity_ids(monkeypatch, capsys, tmp_path):
+def test_cmd_show_supports_multiple_entity_ids(monkeypatch, capsys, indexed_repo):
     rows = {
         "AAA": {
             "qualified_name": "pkg.alpha",
@@ -41,7 +41,7 @@ def test_cmd_show_supports_multiple_entity_ids(monkeypatch, capsys, tmp_path):
 
     args = Namespace(
         entity_ids=["AAA", "BBB"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         full=True,
     )
@@ -55,7 +55,7 @@ def test_cmd_show_supports_multiple_entity_ids(monkeypatch, capsys, tmp_path):
     assert "CLS BBB C=Bar F=E A=1 #CORE" in out
 
 
-def test_cmd_show_reports_missing_entities_after_found_results(monkeypatch, capsys, tmp_path):
+def test_cmd_show_reports_missing_entities_after_found_results(monkeypatch, capsys, indexed_repo):
     monkeypatch.setattr(
         cli,
         "get_entity_with_ir",
@@ -72,7 +72,7 @@ def test_cmd_show_reports_missing_entities_after_found_results(monkeypatch, caps
 
     args = Namespace(
         entity_ids=["AAA", "MISSING"],
-        repo_path=tmp_path,
+        repo_path=indexed_repo,
         level="Behavior",
         full=True,
     )

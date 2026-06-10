@@ -265,6 +265,20 @@ def load_config(repo_path: Path) -> Dict[str, Any]:
     return cfg
 
 
+def require_index(repo_path: Path) -> Path:
+    """Exit with guidance when a repo has no CodeIR index. Returns the entities DB path.
+
+    Must run before any store access so read commands never create an empty
+    .codeir directory as a side effect in unindexed repositories.
+    """
+    db_path = repo_path / ".codeir" / "entities.db"
+    if not db_path.exists():
+        print(f"No CodeIR index found at {repo_path / '.codeir'}.")
+        print(f"Run `codeir index {repo_path}` first, or `codeir init` for full setup.")
+        raise SystemExit(1)
+    return db_path
+
+
 def _format_progress_value(value: Any) -> str:
     if isinstance(value, bool):
         return "yes" if value else "no"
@@ -1008,6 +1022,7 @@ def _ensure_agent_rules(repo_path: Path) -> None:
 
 def cmd_search(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
     query_str = " ".join(args.query)
     category = getattr(args, "category", None)
     results = search_entities(
@@ -1062,6 +1077,7 @@ def cmd_search(args: argparse.Namespace) -> None:
 
 def cmd_show(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
     any_found = False
     missing_ids = []
 
@@ -1153,6 +1169,7 @@ def cmd_show(args: argparse.Namespace) -> None:
 
 def cmd_expand(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
 
     # Collect all entities from provided IDs (expanding wildcards)
     all_entities = []
@@ -1263,12 +1280,15 @@ def cmd_expand(args: argparse.Namespace) -> None:
                         print(f"  {caller_name} ({file_path}) \u2014 {refs} {ref_word}")
                     if file_count > 3:
                         print(f"  Run `codeir callers {entity_id}` for full list.")
+            except sqlite3.OperationalError:
+                pass  # store predates the callers table; skip the footer
             finally:
                 conn.close()
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
     levels = get_entity_all_levels(repo_path=repo_path, entity_id=args.entity_id)
     if not levels:
         print(f"Entity not found: {args.entity_id}")
@@ -1302,10 +1322,7 @@ def cmd_compare(args: argparse.Namespace) -> None:
 
 def cmd_callers(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -1421,10 +1438,7 @@ def cmd_callers(args: argparse.Namespace) -> None:
 
 def cmd_impact(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -1548,10 +1562,7 @@ def cmd_impact(args: argparse.Namespace) -> None:
 
 def cmd_scope(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -1629,10 +1640,7 @@ def cmd_scope(args: argparse.Namespace) -> None:
 def cmd_trace(args: argparse.Namespace) -> None:
     """Find shortest call path between two entities using BFS."""
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -1812,6 +1820,7 @@ def _area_for_path(file_path: str) -> str:
 
 def cmd_grep(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
     evidence = getattr(args, "evidence", False)
     context = args.context if args.context else (2 if evidence else 0)
     before_context = args.before_context if args.before_context is not None else context
@@ -1835,8 +1844,10 @@ def cmd_grep(args: argparse.Namespace) -> None:
             category=args.category,
         )
     except FileNotFoundError:
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+        # require_index ran at the top; this only fires if the store vanished mid-run.
+        print(f"No CodeIR index found at {repo_path / '.codeir'}.")
+        print(f"Run `codeir index {repo_path}` first, or `codeir init` for full setup.")
+        raise SystemExit(1)
     except ValueError as exc:
         print(str(exc))
         return
@@ -1891,6 +1902,7 @@ def cmd_grep(args: argparse.Namespace) -> None:
 
 def cmd_stats(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
     stats = get_stats(repo_path)
     source_language = stats.get("source_language", "python")
     source_languages = stats.get("source_languages", [source_language])
@@ -1956,10 +1968,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
 
 def cmd_module_map(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -2077,10 +2086,7 @@ def _resolve_bearings_paths(repo_path: Path) -> tuple[Dict[str, Path], bool]:
 
 def _generate_bearings_files(repo_path: Path) -> None:
     """Generate all bearings files (summary, full, per-category)."""
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     conn = connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -2141,6 +2147,7 @@ def _estimate_tokens(file_path: Path) -> int:
 
 def cmd_bearings(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
+    require_index(repo_path)
 
     # --generate mode: regenerate all files
     if args.generate:
@@ -2201,10 +2208,7 @@ def cmd_bearings(args: argparse.Namespace) -> None:
 
 def cmd_patterns(args: argparse.Namespace) -> None:
     repo_path = args.repo_path.resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    db_path = require_index(repo_path)
 
     from index.pattern_detector import detect_patterns, get_patterns
 
@@ -2251,10 +2255,7 @@ def cmd_patterns(args: argparse.Namespace) -> None:
 
 def cmd_rules(args: argparse.Namespace) -> None:
     repo_path = (args.repo_path or args.repo_path_flag).resolve()
-    db_path = repo_path / ".codeir" / "entities.db"
-    if not db_path.exists():
-        print("No index found. Run `codeir index <repo_path>` first.")
-        return
+    require_index(repo_path)
 
     from ir.rules_generator import generate_rules_file
 
@@ -2356,7 +2357,16 @@ def main() -> None:
 
     handler = handlers.get(args.command)
     if handler:
-        handler(args)
+        try:
+            handler(args)
+        except FileNotFoundError as exc:
+            # Store files raise FileNotFoundError when an index is missing or
+            # partial (e.g. mapping.db absent). Fail with guidance, no traceback.
+            if ".codeir" in str(exc):
+                print(str(exc))
+                print("Run `codeir index <repo_path>` first, or `codeir init` for full setup.")
+                raise SystemExit(1) from exc
+            raise
     else:
         parser.print_help()
 
